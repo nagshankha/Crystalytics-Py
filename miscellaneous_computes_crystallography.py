@@ -31,7 +31,7 @@ class CrystalStructure():
    Motifs are atoms or groups of atoms at the lattice site to complete the crystal 
    structure. The location of the atoms in the motif is expressed in fractional
    coordinates of the primitive lattice vectors.
-   Therefore, if the chosen set if primitive vectors is (v1, v2, v3) and the set of
+   Therefore, if the chosen set of primitive vectors is (v1, v2, v3) and the set of
    j motifs be ((a1, b1, c1), (a2, b2, c2), ..., (aj, bj, cj)) where a, b, c are 
    fractional coordinates (0, 1] w.r.t. v1, v2, v3 respectively, then the set of 
    atomic sites A of the corresponding crystal structure is as follows:
