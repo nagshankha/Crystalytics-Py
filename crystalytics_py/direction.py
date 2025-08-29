@@ -1,3 +1,4 @@
+from crystal_structure import CrystalStructure
 import numpy as np
 import fractions
 import some_math_operations as sm
@@ -16,26 +17,13 @@ class Direction:
     def __init__(self, crystal_structure, directions,
                  basis_directions = 'global_orthonormal',
                  limit_denom = 100, verbose=False):
-        self.crystal_structure = crystal_structure
-        self.directions = directions
-        self.basis_directions = basis_directions
-        self.limit_denom = limit_denom
-        self.verbose = verbose
-
-    def compute(self, compute_list='all'):
-        pass
-
-    def _compute_lattice_spacing(self):
-
-        """
-        This method calculates the lattice spacing along any direction.
-        It is the length of the smallest lattice vector along that direction. 
         
+        """
         Inputs:
         
         directions: The directions along which the lattice spacing is requested.
                     type = numpy ndarray (M, N)
-                            N = number of dimensions (same as self.primitive_vecs)
+                            N = number of dimensions (same as self.crystal_structure.primitive_vecs)
                             M = number of requested directions
                     dtype = float
 
@@ -51,7 +39,8 @@ class Direction:
                                 'primitive_vector': The primitive lattice vectors 
                                     must have their components defined w.r.t. orthonormal 
                                     basis and the desired directions are defined w.r.t. 
-                                    the primitive vectors.
+                                    the primitive vectors. In this case, the directions
+                                    must be an integer array.
         limit_denom: To express a floating point number as fraction of numerator and 
                     denominator, limit_denom limits the largest value of denominator
                     possible
@@ -60,8 +49,23 @@ class Direction:
         verbose: Permission to print messages during running of the method.
                 type = bool
                 value = default False
+        """
 
+        self.crystal_structure = crystal_structure
+        self.directions = directions
+        self.basis_directions = basis_directions
+        self.limit_denom = limit_denom
+        self.verbose = verbose
 
+    def compute(self, compute_list='all'):
+        pass
+
+    def _compute_lattice_spacing(self):
+
+        """
+        This method calculates the lattice spacing along any direction.
+        It is the length of the smallest lattice vector along that direction. 
+        
         Output: 
 
         1D numpy array (M,) of floats with lattice spacings corresponding to each requested
@@ -74,18 +78,16 @@ class Direction:
         the vector L = (a1*v1) + (a2*v2) + ... + (aN*vN) would always join two lattice points
         if a_i are integers (negative, positive or zero). So we must choose a set {a} of 
         integers such that they the relatively prime (meaning, gcd(a',b',c') = 1) and the vector 
-        L({a}) points towards the direction is which the lattice spacing is requested. The magnitude of lattice vector L({a}) is the desired lattice spacing.
+        L({a}) points towards the direction is which the lattice spacing is requested. 
+        The magnitude of lattice vector L({a}) is the desired lattice spacing.
         
         """
-        # Checking the validity of the inputs --- direction, basis_directions
-        # and limit_denom
-        directions = self.checkInputs(directions, basis_directions, limit_denom, verbose)
 
-        if basis_directions == 'global_orthonormal':
+        if self.basis_directions == 'global_orthonormal':
             # Expressing the components of the desired directions in terms of the primitive lattice vectors
-            dir_primitive = np.linalg.solve(self.primitive_vecs.T, directions.T).T
+            dir_primitive = np.linalg.solve(self.crystal_structure.primitive_vecs.T, self.directions.T).T
         else:
-            dir_primitive = directions
+            dir_primitive = self.directions
 
         # None of dir_primitive vectors must be a null vector
         if any(np.all(np.isclose(dir_primitive, 0.0), axis = 1)):
@@ -99,8 +101,9 @@ class Direction:
         # If the desired direction in terms of primitive lattice vectors (as stored in dir_primitive) is (m,n,l,...)
         # then we calculate lcm/gcd = lcm of denominators of m,n,l.../ gcd of numerators of m,n,l,..., and multiply this 
         # with each of m,n,l,... and the result would be the desired relatively prime set of integers;
-        # however if there are square root elements in the primitive lattice vectors or directions, they might be decimals
-        # but close to the desired integer values ---> So no significant problem is envisaged in calculation of lattice spacing
+        # however if there are square root elements in the primitive lattice vectors or directions (in global coordinates), 
+        # they might be decimals but close to the desired integer values ---> 
+        # So no significant problem is envisaged in calculation of lattice spacing
 
         # Creating numpy ufuncs of functions of the fractions class
         frac_array = np.frompyfunc(lambda x: fractions.Fraction(x).limit_denominator(limit_denom), 1, 1)
@@ -151,4 +154,56 @@ class Direction:
 
 
     def __setattr__(self, name, value):
-        pass
+
+        match name:
+
+            case "crystal_structure":
+                if isinstance(value, CrystalStructure):
+                    self.__dict__[name] = value
+                else:
+                    raise ValueError("crystal_structure must be an instance of CrystalStructure")
+                
+            case "directions":
+                if not (isinstance(value, np.ndarray) and 
+                        (np.issubdtype(value.dtype, np.floating) or 
+                         np.issubdtype(value.dtype, np.integer))):
+                    raise ValueError("directions must be a numpy array of floats or integers")
+                elif value.ndim != 2 or value.shape[1] != self.crystal_structure.primitive_vecs.shape[0]:
+                    raise ValueError(f"directions must be a 2D array with shape (M, {self.crystal_structure.primitive_vecs.shape[0]}), "+
+                                     "where M is the number of directions")
+                elif hasattr(self, "basis_directions") and self.basis_directions == "primitive_vector":
+                    if not np.issubdtype(value.dtype, np.integer):
+                        raise ValueError("directions must be an integer numpy array " +
+                                         "when basis_directions is 'primitive_vector'")
+                else:
+                    self.__dict__[name] = value
+
+            case "basis_directions":
+                # Ensure it's one of the allowed values
+                if value not in ("global_orthonormal", "primitive_vector"):
+                    raise ValueError(f"Invalid basis_directions: {value} "+"\n"+
+                                     "Allowed values are 'global_orthonormal' or 'primitive_vector'")
+                elif hasattr(self, "directions") and np.issubdtype(self.directions.dtype, np.floating):
+                    if value == "primitive_vector":
+                        raise ValueError("basis_directions cannot be 'primitive_vector' when " +
+                                         "directions is an array of floats")
+                else:
+                    self.__dict__[name] = value
+
+            case "limit_denom":
+                # Ensure it's a positive integer
+                if not isinstance(value, int) or value <= 0:
+                    raise ValueError("limit_denom must be a positive integer")
+                else:
+                    self.__dict__[name] = value
+            case "verbose":
+                # Ensure it's a boolean
+                if not isinstance(value, bool):
+                    raise ValueError("verbose must be a boolean")
+                else:
+                    self.__dict__[name] = value
+            case _:
+                # Default behavior for other attributes
+                self.__dict__[name] = value
+
+
