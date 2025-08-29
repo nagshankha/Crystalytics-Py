@@ -2,6 +2,40 @@ import numpy as np
 from scipy import optimize
 
 def shortest_collinear_vector_with_integer_components(v, max_length=50):
+
+    """
+    Finds the shortest integer vector(s) that are collinear with the given input vector(s).
+
+    Parameters
+    ----------
+    v : np.ndarray
+        Input vector(s). Can be a 1D array (single vector) or a 2D array (multiple vectors, shape (M, N)).
+    max_length : int or float, optional
+        Integer vectors with lengths less than max_length are searched for. Default is 50.
+
+    Returns
+    -------
+    v_new : np.ndarray
+        Shortest integer vector(s) collinear with the input vector(s).
+    modified cosine deviation : np.ndarray
+        Array of deviations from perfect collinearity for each vector.
+        The deviation is defined as 0.5 * (1 - cos(theta)), where theta is the angle between
+        the input vector and the found integer vector. A value of 0 indicates perfect collinearity.
+
+    Raises
+    ------
+    ValueError
+        If the input vector v is not a 1D or 2D array.
+    RuntimeError
+        If no suitable integer vector can be found or optimization fails 
+        (the latter being unlikely and might indicate a bug in the code).
+
+    Notes
+    -----
+    The function uses numerical optimization to find integer vectors that are collinear
+    with the input vectors, minimizing the deviation from perfect collinearity.
+    """
+
     if len(v.shape) == 1:
         v = v[None,:]
     elif len(v.shape) == 2:
