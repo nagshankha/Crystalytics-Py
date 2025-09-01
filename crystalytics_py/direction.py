@@ -1,6 +1,7 @@
 from crystal_structure import CrystalStructure
 import numpy as np
 import fractions
+from utils import *
 import some_math_operations as sm
 import miscellaneous_routines as misc
 import warnings
@@ -48,6 +49,8 @@ class Direction:
             type = bool
             value = default False
     """
+
+    _max_lattice_vector_length = 50
     
     def __init__(self, crystal_structure, directions,
                  basis_directions = 'global_orthonormal',
@@ -56,7 +59,6 @@ class Direction:
         self._crystal_structure = crystal_structure
         self._directions = directions
         self._basis_directions = basis_directions
-        self._limit_denom = limit_denom
         self.verbose = verbose
         self._compute_pipeline = []
 
@@ -75,6 +77,13 @@ class Direction:
     @property
     def basis_directions(self):
         return self._basis_directions
+    
+    @classmethod
+    def set_max_lattice_vector_length(cls, length):
+        if isinstance(length, (int, float)) and length > 0:
+            cls._max_lattice_vector_length = length
+        else:
+            raise ValueError("max_lattice_vector_length must be a positive number")
 
     def compute(self, compute_list='all'):
         self._execute_pipeline()
@@ -123,14 +132,43 @@ class Direction:
         # Setting very small values in self._dir_primitive to zero
         self._dir_primitive[np.isclose(self._dir_primitive, 0)] = 0
     
-        # Finding the shortest lattice vector along each desired direction
-        dir_lattice_vecs, dev = shortest_collinear_vector_with_integer_components(self._dir_primitive,
-                                                                                  max_length=self.limit_denom)
+        # Finding the shortest lattice vector along each desired direction (expressed in primitive vectors basis)
+        # self._cosine_deviations gives the deviation from perfect collinearity for debugging purposes.
+        # Note that this is not exactly cosine deviation per se and a value of 0 indicates perfect collinearity.
+        # It is defined as 0.5*(1-cos(theta)), where theta is the angle between the desired direction
+        # and the found shortest lattice vector.
+        self._shortest_lattice_vectors, self._cosine_deviations = \
+            shortest_collinear_vector_with_integer_components(self._dir_primitive,
+                                                              max_length=self._max_lattice_vector_length)
+        
+        if self.verbose:
+            if np.any(self._cosine_deviations > 1e-6):
+                n_deviated = np.sum(self._cosine_deviations > 1e-6)
+                print(f'Warning: Could not find integer lattice vectors "absolutely" collinear with {n_deviated} out of '+
+                      f"{len(self.directions)} directions. \n Please check the self._cosine_deviations > 1e-6 for such directions")
 
         # lattice spacing(s) along desired direction(s)
-        lattice_spacings = np.linalg.norm(np.dot(self.primitive_vecs.T, dir_lattice_vecs.T), axis = 0)
+        self._lattice_spacings = np.linalg.norm(np.dot(self.primitive_vecs.T, 
+                                                       self._shortest_lattice_vectors.T), axis = 0)
 
-        return lattice_spacings, dir_lattice_vecs
+    
+    @property
+    def lattice_spacings(self):
+        if hasattr(self, '_lattice_spacings'):
+            return self._lattice_spacings
+        else:
+            raise RuntimeError("lattice spacings have not been computed yet. \n"+
+                               "Please run the compute() method first with "+
+                               "lattice_spacings in the compute_list.")
+    
+    @property
+    def shortest_lattice_vectors(self):
+        if hasattr(self, '_shortest_lattice_vectors'):
+            return self._shortest_lattice_vectors
+        else:
+            raise RuntimeError("shortest lattice vectors have not been computed yet. \n"+
+                               "Please run the compute() method first with "+
+                               "lattice_spacings in the compute_list.")
 
 
     def __setattr__(self, name, value):
