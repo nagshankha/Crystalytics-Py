@@ -17,6 +17,39 @@ from sympy.core.containers import Tuple
 class Direction:
 
     """
+    Represents a set of directions in a crystal lattice and provides methods to compute
+    lattice spacings and related properties along those directions.
+
+    Inputs for instantiation
+    ----------
+    crystal_structure : CrystalStructure
+        The crystal structure object containing primitive vectors and motifs.
+    directions : np.ndarray
+        Array of directions along which lattice spacing is requested. Shape (M, N).
+    basis_directions : str, optional
+        Basis in which the directions are defined. Either 'global_orthonormal' (default)
+        or 'primitive_vector'.
+    verbose : bool, optional
+        If True, prints additional information during computations (default: False).
+
+    Attributes
+    ----------
+    primitive_vectors : np.ndarray
+        Primitive lattice vectors of the crystal structure.
+    motifs : np.ndarray
+        Motifs of the crystal structure.
+    directions : np.ndarray
+        Directions along which lattice spacing is computed.
+    basis_directions : str
+        Basis in which the directions are defined.
+    lattice_spacings : np.ndarray
+        Computed lattice spacings along the requested directions.
+    shortest_lattice_vectors : np.ndarray
+        Shortest lattice vectors (expressed in primitive vector basis) that are
+        collinear with the requested directions.
+    """
+
+    """
     Inputs:
     
     directions: The directions along which the lattice spacing is requested.
@@ -54,7 +87,27 @@ class Direction:
     
     def __init__(self, crystal_structure, directions,
                  basis_directions = 'global_orthonormal',
-                 limit_denom = 50, verbose=False):
+                 verbose=False):
+
+        """
+        Initializes the Direction object with the given crystal structure and directions.
+
+        Arguments
+        ----------
+        crystal_structure : CrystalStructure
+            The crystal structure object containing primitive vectors and motifs.
+        directions : np.ndarray (float)
+            Array of directions along which lattice spacing is requested. Shape (M, N) where
+            N is the number of dimensions (same as crystal_structure.primitive_vecs) and
+            M is the number of requested directions.
+        basis_directions : str, optional
+            Basis in which the directions are defined. Either 'global_orthonormal' (default)
+            or 'primitive_vector'.
+        limit_denom : int, optional
+            Maximum denominator for rational approximations (default: 50).
+        verbose : bool, optional
+            If True, prints additional information during computations (default: False).
+        """
         
         self._crystal_structure = crystal_structure
         self._directions = directions
@@ -98,24 +151,26 @@ class Direction:
     def _compute_lattice_spacing(self):
 
         """
-        This method calculates the lattice spacing along any direction.
-        It is the length of the smallest lattice vector along that direction. 
-        
-        Output: 
+        Calculates the lattice spacing along each requested direction.
 
-        1D numpy array (M,) of floats with lattice spacings corresponding to each requested
-        direction
-            
-        
-        Theory: Estimation of lattice spacing
+        The lattice spacing is defined as the length of the shortest lattice vector
+        collinear with each direction. 
 
-        Let v1, v2, v3, ..., vN be N primitive lattice vectors for a N-D lattice. By defination,
-        the vector L = (a1*v1) + (a2*v2) + ... + (aN*vN) would always join two lattice points
-        if a_i are integers (negative, positive or zero). So we must choose a set {a} of 
-        integers such that they the relatively prime (meaning, gcd(a',b',c') = 1) and the vector 
-        L({a}) points towards the direction is which the lattice spacing is requested. 
-        The magnitude of lattice vector L({a}) is the desired lattice spacing.
-        
+        Raises
+        ------
+        RuntimeError
+            If any direction is a null vector or if no suitable lattice vector is found.
+
+        Actions
+        ------------
+        Sets the following attributes:
+            - self._dir_primitive : Directions expressed in primitive vector basis.
+            - self._shortest_lattice_vectors : Shortest lattice vectors expressed in primitive vector basis.
+            - self._cosine_deviations : Deviation from perfect collinearity.
+            - self._lattice_spacings : Computed lattice spacings.
+
+        If self.verbose is set True, the method prints warnings if any direction 
+        does not have a perfectly collinear lattice vector.
         """
 
         if self.basis_directions == 'global_orthonormal':

@@ -36,12 +36,20 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
     with the input vectors, minimizing the deviation from perfect collinearity.
     """
 
+    if not isinstance(v, np.ndarray):
+        raise ValueError("Input vector v must be a numpy array.")
+
     if len(v.shape) == 1:
         v = v[None,:]
     elif len(v.shape) == 2:
         pass
     else:
         raise ValueError("Input vector v must be 1D or 2D array.")
+    
+    if np.issubdtype(v.dtype, np.integer):
+        v_new = (v.T/np.gcd.reduce(v, axis=1)).T
+        return v_new, np.zeros(len(v))
+
     u = (v.T/np.linalg.norm(v, axis=1)).T
     func1 = lambda x: np.max(abs((x*u.T)-np.round(x*u.T)))
     func2 = lambda x: np.max(abs((x[None,:,None]*u[:,None,:])-np.round(x[None,:,None]*u[:,None,:])), axis=-1)
