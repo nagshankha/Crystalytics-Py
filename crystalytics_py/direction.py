@@ -49,40 +49,7 @@ class Direction:
         collinear with the requested directions.
     """
 
-    """
-    Inputs:
-    
-    directions: The directions along which the lattice spacing is requested.
-                type = numpy ndarray (M, N)
-                        N = number of dimensions (same as self.crystal_structure.primitive_vecs)
-                        M = number of requested directions
-                dtype = float
-
-    ***Optional inputs***
-
-    basis_direction: The basis vectors w.r.t. to which the components of the
-                    requested directions are provided.
-                    type = str
-                    value = 'global_orthonormal' (default): The primitive lattice 
-                                vectors and the desired direction must have their 
-                                components defined w.r.t. same orthonormal basis.
-                                            or
-                            'primitive_vector': The primitive lattice vectors 
-                                must have their components defined w.r.t. orthonormal 
-                                basis and the desired directions are defined w.r.t. 
-                                the primitive vectors. In this case, the directions
-                                must be an integer array.
-    max_length: It is the maximum search length for finding the shortest lattice vector 
-                along any desired direction. Increasing this value increases the
-                chance of finding the shortest lattice vector but also increases
-                the computational cost.
-                type = int or float
-                value = default 50
-    verbose: Permission to print messages during running of the method.
-            type = bool
-            value = default False
-    """
-
+    # Maximum allowed length for searching shortest lattice vectors
     _max_lattice_vector_length = 50
     
     def __init__(self, crystal_structure, directions,
@@ -102,9 +69,7 @@ class Direction:
             M is the number of requested directions.
         basis_directions : str, optional
             Basis in which the directions are defined. Either 'global_orthonormal' (default)
-            or 'primitive_vector'.
-        limit_denom : int, optional
-            Maximum denominator for rational approximations (default: 50).
+            or 'primitive_vector'. If 'primitive_vector', the directions must be an integer array.
         verbose : bool, optional
             If True, prints additional information during computations (default: False).
         """
