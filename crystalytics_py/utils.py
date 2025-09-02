@@ -5,6 +5,8 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
 
     """
     Finds the shortest integer vector(s) that are collinear with the given input vector(s).
+    Basically, this function searches for setwise coprime integers forming vectors parallel to the 
+    given input vectors.
 
     Parameters
     ----------
