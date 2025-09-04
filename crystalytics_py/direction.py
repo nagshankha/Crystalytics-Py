@@ -130,7 +130,8 @@ class Direction:
         ------------
         Sets the following attributes:
             - self._dir_primitive : Directions expressed in primitive vector basis.
-            - self._shortest_lattice_vectors : Shortest lattice vectors expressed in primitive vector basis.
+            - self._shortest_lattice_vectors : Shortest lattice vectors in those directions 
+                                               expressed in primitive vector basis.
             - self._cosine_deviations : Deviation from perfect collinearity.
             - self._lattice_spacings : Computed lattice spacings.
 
@@ -141,7 +142,7 @@ class Direction:
         if self.basis_directions == 'global_orthonormal':
             # Expressing the components of the desired directions in terms of the primitive lattice vectors
             # This is saved in self._dir_primitive for debugging purposes
-            self._dir_primitive = np.linalg.solve(self.crystal_structure.primitive_vecs.T, self.directions.T).T
+            self._dir_primitive = np.linalg.solve(self.primitive_vecs.T, self.directions.T).T
         else:
             self._dir_primitive = self.directions.copy()
 
@@ -171,7 +172,7 @@ class Direction:
         self._lattice_spacings = np.linalg.norm(np.dot(self.primitive_vecs.T, 
                                                        self._shortest_lattice_vectors.T), axis = 0)
 
-    
+
     @property
     def lattice_spacings(self):
         if hasattr(self, '_lattice_spacings'):
@@ -189,6 +190,198 @@ class Direction:
             raise RuntimeError("shortest lattice vectors have not been computed yet. \n"+
                                "Please run the compute() method first with "+
                                "lattice_spacings in the compute_list.")
+
+    def _compute_lattice_interplanar_spacing(self):
+
+        """
+        Calculates the lattice interplanar spacing along each requested direction. 
+        There may be more than one plane of lattice sites within one lattice spacing
+        along any direction; the number of such planes is called multiplicity. Due to
+        translational symmetry of the lattice, all the planes will be equally spaced 
+        along that direction; therefore the lattice interplanar spacing is simply 
+        the lattice spacing divided by the multiplicity. 
+        
+        Outputs: 
+
+        1D numpy array (M,) of floats with lattice interplanar spacings corresponding to each 
+        requested direction
+
+        list(len=M) of list(len=P-1) of 2D numpy array (L,N) of floats with smallest relative 
+        displacements of lattice planes w.r.t. any one of them (only if return_relative_displacements=True). 
+        M is the number of requested directions, P the number of lattice planes within one lattice 
+        spacing in any direction (The corresponding list has P-1 entries since we are considering 
+        relative displacements), L is the number of possible smallest relative displacement vectors 
+        and N is the number of dimensions of the problem.
+        
+        1D numpy array (M,) of ints with multiplicity corresponding to each requested direction
+        (only if return_multiplicity=True)
+
+        1D numpy array (M,) of floats with lattice spacings corresponding to each requested
+        direction (only if return_lattice_spacing=True)
+            
+        *************************************************
+        Theory: Estimation of lattice interplanar spacing
+        *************************************************
+
+        Let L be the lattice vector in the desired direction such that L = (a1*v1) + (a2*v2) + ... + (aN*vN)
+        where a1, a2, ..., aN are integer coefficients of the linear combination of primitive lattice vectors 
+        v1, v2, ..., vN. Now the number of planes of lattice sites within one lattice spacing must equal the number 
+        of possible values of L.((m1*v1) + (m2*v2) + ... + (mN*vN)) in the interval (0, lattice_spacing**2], 
+        where '.' signifies dot product, and m_i are integers. The expression simplifies to:
+        0 < m1*p1 + m2*p2 + ... + mN*pN <= lattice_spacing**2  --------> Ineq 1
+        p1 = (a1*v1.v1) + (a2*v1.v2) + ... + (aN*v1.vN)
+        p2 = (a1*v2.v1) + (a2*v2.v2) + ... + (aN*v2.vN)
+        .
+        .
+        .
+        pN = (a1*vN.v1) + (a2*vN.v2) + ... + (aN*vN.vN)
+        
+        We multiply Ineq 1 by a factor I such that we get
+        0 < m1*p1_I + m2*p2_I + ... + mN*pN_I <= mul -------> Ineq 2
+        p1_I, p2_I, ..., pN_I are setwise coprime integers and in same proportion as p1, p2, ..., pN.
+        mul is also an integer and happens to be the number of stacking planes (the multiplicity) since
+        it equals the number of possible values of (m1*p1_I + m2*p2_I + ... + mN*pN_I) in the inteval (0, mul].
+        (This stems from the number theory theorem which states:
+        "For any positive integers a and b, there exist integers x and y such that ax + by = gcd(a, b). 
+            Furthermore, as x and y vary over all integers, ax + by attains all multiples and only multiples 
+            of gcd(a, b)." In our case, p1_I, p2_I,... are the a,b and their gcd is 1. So basically the expression in 
+            Ineq 2 will evaluate to multiples of 1, i.e. all integers depending on m_i chosen and mul is the multiplicity
+            since its defines the upper limit via Ineq 2).
+
+        So the task is to find the factor I, then mul equals I*lattice_spacing**2 and
+        the lattice interplanar spacing (= lattice_spacing/mul) equals (I*lattice_spacing)**(-1)      
+
+        """      
+
+        # Gram matrix primitive lattice vectors
+        gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
+        
+        # Estimating p1, p2, ... pN
+        coeff = np.dot(gram_matrix, self.shortest_lattice_vectors.T).T
+
+        integer_coeff, cosine_deviations = \
+            shortest_collinear_vector_with_integer_components(coeff,
+                                                              max_length=self._max_lattice_vector_length)
+
+        I = coeff/integer_coeff
+        if np.max(abs(I-np.round(I))) > 1e-6:
+            sel = np.max(abs(I-np.round(I)), axis=1) > 1e-6
+            raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
+                               f"cosine deviations of p vectors are \n {cosine_deviations[sel]}")
+        elif not np.allclose(np.round(I).T-np.round(I)[:,0], 0.0):
+            sel = np.invert(np.allclose(np.round(I).T-np.round(I)[:,0], 0.0, axis=0))
+            raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
+                               f"the I is not unique for all dimensions \n {I[sel]}")
+        else:
+            I = np.round(I)[:,0]
+
+        multiplicity = I * self.lattice_spacings**2
+        if np.allclose(multiplicity, np.round(multiplicity)):
+            self._multiplicity = multiplicity
+        else:
+            sel = np.invert(np.allclose(multiplicity, np.round(multiplicity)))
+            raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
+                               f"Multiplicity is not an integer: \n {multiplicity[sel]}")
+
+        self._lattice_interplanar_spacing = self.lattice_spacings/self._multiplicity
+
+        mul = frac_array(mul)
+        if any(den_array(mul).astype(int) != 1):
+            raise RuntimeError('multiplicity must be an integer.. Check!!!')
+        else:
+            multiplicity = num_array(mul).astype(int)
+    
+        lattice_interplanar_spacings = lattice_spacings/multiplicity
+
+        # Estimating smallest relative displacents of lattice planes w.r.t any one of them
+        # if return_relative_displacements is True
+        if return_relative_displacements:
+            relative_displacements = [] # Initiating empty list
+            for dir_count in np.arange(len(multiplicity)):
+                # dir_count: index iterating over the requested directions
+                # Function for evaluating expr "disp" for a particular requested direction
+                disp_func = lambda x: (x - 
+                            (np.dot(np.dot(self.primitive_vecs.T, x),
+                                    np.dot(self.primitive_vecs.T, dir_lattice_vecs[dir_count]))/
+                            lattice_spacings[dir_count]**2 * dir_lattice_vecs[dir_count]))
+                relative_displacements.append([]) # appending an empty list to fill in entries for this
+                                                # particular requested direction (index: dir_count)
+                for p_count in np.arange(multiplicity[dir_count]-1):
+                # p_count: index iterating over the lattice planes within one lattice spacing (except one)
+                # along the particular requested direction (index: dir_count)
+                coeff_norm = (coeff.T * coeff_den_lcm.astype(float) # coeff normalized by multiplying it's entries by the lcm of the 
+                                / coeff_num_gcd.astype(float)).T      # denominators and dividing by the gcd of the numerators
+                
+                objective_func = lambda x: np.sum(np.outer(x,x)*metric_tensor) # Objective function for the minimization problem
+                constraint_func = lambda x: np.sum(x*coeff_norm[dir_count])-p_count-1 # Constraint function equating to zero 
+                                                                                        # for the minimization problem
+                # Solving the optimization problem
+                res = optimize.minimize(objective_func, np.zeros(len(self.primitive_vecs)),
+                                    method='SLSQP', constraints = (
+                                    {'type':'eq', 'fun': constraint_func}), options = {'ftol':1e-8})
+                res.x[np.isclose(res.x, 0)] = 0
+                # Since the objective function is convex the problem will have a unique minima (consider real variables)
+                # However since our minimization problem needs the variable to be integer, there won't be a unique minima
+                # unless the above minimization yield integers for all elements of the optimum vector.
+                if np.allclose(res.x, np.round(res.x)):
+                    # checks whether all elements of the optimal vector are integers
+                    relative_displacements[dir_count].append(disp_func(res.x))
+                else:
+                    #**** Method 1 (worked correctly for fcc but might not work for some systems since it has some parameter that can be tuned!) ***
+                    #check_int = np.isclose(res.x, np.round(res.x))
+                    #res.x[check_int] = np.round(res.x)[check_int]
+                    #print 'res.x', res.x 
+                    #int_floor = np.floor(res.x)
+                    #int_arr = np.array(list(itertools.product(*[np.arange(y, y+2) 
+                    #          if np.invert(check_int)[i] else [y] for i,y 
+                    #          in enumerate(int_floor)])))
+                    #int_satisfy_contraint = np.array([np.isclose(constraint_func(y), 0) 
+                    #                                  for y in int_arr])
+                    #int_arr = int_arr[int_satisfy_contraint]
+                    #**** Method 2 (should work for all cases) ***
+                    int_arr = findingNearestIntSoln2LinDiophantineEq(res.x, coeff_norm[dir_count], p_count+1)
+                    obj_values = np.array([objective_func(y) for y in int_arr])
+                    int_arr = int_arr[np.isclose(obj_values, min(obj_values))]
+                    relative_displacements[dir_count].append(
+                            np.array([disp_func(y) for y in int_arr]))  
+                if basis_relative_displacements == 'global_orthonormal':
+                    relative_displacements[dir_count][p_count] = np.dot(
+                    self.primitive_vecs.T, relative_displacements[dir_count][p_count].T).T
+                relative_displacements[dir_count][p_count][np.isclose(
+                                relative_displacements[dir_count][p_count], 0)] = 0
+
+            return operator.itemgetter(*np.nonzero([True, True, return_multiplicity, return_lattice_spacing])[0])((
+                            lattice_interplanar_spacings, relative_displacements, multiplicity, lattice_spacings))   
+
+        else:
+            return operator.itemgetter(*np.nonzero([True, return_multiplicity, return_lattice_spacing])[0])((
+                            lattice_interplanar_spacings, multiplicity, lattice_spacings))  
+
+    
+    def _compute_relative_shift_of_lattice_planes(self):
+
+        """
+        Calculates the smallest relative shift vectors among consecutive lattice planes along each requested direction.
+
+        ************************************************************************************************************
+        Theory: Finding the smallest relative displacement vector(s) of lattice planes w.r.t. any one of them within 
+                one lattice spacing along the requested direction
+        ************************************************************************************************************
+
+        For this we need to solve the following convex optimization problem with integer variables:
+            
+            Minimize sum_i sum_j m_i*m_j*(v_i.v_j) (where variable integers m_i and integer constants p_i_I are same as in Ineq 2)
+            s.t.
+                m1*p1_I + m2*p2_I + ... + mN*pN_I = 0 or 1 or ... (mul-1)
+            (Depending on what you put on the right hand side of the constraint equation, 
+            you get the displacement for that particular lattice plane) 
+
+        Suppose one solution of its optimization is m1', m2', ..., mN'
+        Then the corresponding displacement vector will be 
+        (m1'*v1 + m2'*v2 + ... + mN'*vN) - ((L.(m1'*v1 + m2'*v2 + ... + mN'*vN)/|L|^2) L) -------> expr "disp"
+        """
+
+        pass
 
 
     def __setattr__(self, name, value):
