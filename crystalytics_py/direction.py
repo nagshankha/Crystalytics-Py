@@ -180,7 +180,7 @@ class Direction:
         else:
             raise RuntimeError("lattice spacings have not been computed yet. \n"+
                                "Please run the compute() method first with "+
-                               "lattice_spacings in the compute_list.")
+                               "lattice_spacing in the compute_list.")
     
     @property
     def shortest_lattice_vectors(self):
@@ -189,7 +189,7 @@ class Direction:
         else:
             raise RuntimeError("shortest lattice vectors have not been computed yet. \n"+
                                "Please run the compute() method first with "+
-                               "lattice_spacings in the compute_list.")
+                               "lattice_spacing in the compute_list.")
 
     def _compute_lattice_interplanar_spacing(self):
 
@@ -263,15 +263,12 @@ class Direction:
             shortest_collinear_vector_with_integer_components(coeff,
                                                               max_length=self._max_lattice_vector_length)
 
-        I = coeff/integer_coeff
-        if np.max(abs(I-np.round(I))) > 1e-6:
-            sel = np.max(abs(I-np.round(I)), axis=1) > 1e-6
+        I = integer_coeff/coeff
+        if not np.allclose(np.round(I).T-np.round(I)[:,0], 0.0):
+            sel = np.invert(np.all(np.isclose(np.round(I).T-np.round(I)[:,0], 0.0), axis=0))
             raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
-                               f"cosine deviations of p vectors are \n {cosine_deviations[sel]}")
-        elif not np.allclose(np.round(I).T-np.round(I)[:,0], 0.0):
-            sel = np.invert(np.allclose(np.round(I).T-np.round(I)[:,0], 0.0, axis=0))
-            raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
-                               f"the I is not unique for all dimensions \n {I[sel]}")
+                               f"the I is not unique for all dimensions \n {I[sel]}. \n"+
+                               f"The cosine deviations for these directions are \n {cosine_deviations[sel]}")
         else:
             I = np.round(I)[:,0]
 
@@ -279,19 +276,13 @@ class Direction:
         if np.allclose(multiplicity, np.round(multiplicity)):
             self._multiplicity = multiplicity
         else:
-            sel = np.invert(np.allclose(multiplicity, np.round(multiplicity)))
+            sel = np.invert(np.isclose(multiplicity, np.round(multiplicity)))
             raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
                                f"Multiplicity is not an integer: \n {multiplicity[sel]}")
 
-        self._lattice_interplanar_spacing = self.lattice_spacings/self._multiplicity
+        self._lattice_interplanar_spacings = self.lattice_spacings/self._multiplicity
 
-        mul = frac_array(mul)
-        if any(den_array(mul).astype(int) != 1):
-            raise RuntimeError('multiplicity must be an integer.. Check!!!')
-        else:
-            multiplicity = num_array(mul).astype(int)
-    
-        lattice_interplanar_spacings = lattice_spacings/multiplicity
+        
 
         # Estimating smallest relative displacents of lattice planes w.r.t any one of them
         # if return_relative_displacements is True
@@ -356,6 +347,25 @@ class Direction:
         else:
             return operator.itemgetter(*np.nonzero([True, return_multiplicity, return_lattice_spacing])[0])((
                             lattice_interplanar_spacings, multiplicity, lattice_spacings))  
+
+
+    @property
+    def lattice_interplanar_spacings(self):
+        if hasattr(self, '_lattice_interplanar_spacings'):
+            return self._lattice_interplanar_spacings
+        else:
+            raise RuntimeError("lattice interplanar spacings have not been computed yet. \n"+
+                               "Please run the compute() method first with "+
+                               "lattice_interplanar_spacing in the compute_list.")
+    
+    @property
+    def multiplicity(self):
+        if hasattr(self, '_multiplicity'):
+            return self._multiplicity
+        else:
+            raise RuntimeError("multiplicity for the requested directions have not been computed yet. \n"+
+                               "Please run the compute() method first with "+
+                               "lattice_interplanar_spacing in the compute_list.")
 
     
     def _compute_relative_shift_of_lattice_planes(self):
