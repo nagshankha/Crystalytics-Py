@@ -50,7 +50,7 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
     
     if np.issubdtype(v.dtype, np.integer):
         v_new = (v.T/np.gcd.reduce(v, axis=1)).T
-        return v_new, np.zeros(len(v))
+        return v_new.astype(int), np.zeros(len(v))
 
     u = (v.T/np.linalg.norm(v, axis=1)).T
     func1 = lambda x: np.max(abs((x*u.T)-np.round(x*u.T)))
@@ -70,6 +70,6 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
     if res.success:
         v_new = np.round(res.x*u.T).astype(int).T
         v_new = (v_new.T/np.gcd.reduce(v_new, axis=1)).T
-        return v_new, 0.5*(1-np.sum(u*v_new, axis=1)/np.linalg.norm(v, axis=1))
+        return v_new.astype(int), 0.5*(1-np.sum(u*v_new, axis=1)/np.linalg.norm(v, axis=1))
     else:
         raise RuntimeError(f"Optimization failed with message: \n"+res.message)  
