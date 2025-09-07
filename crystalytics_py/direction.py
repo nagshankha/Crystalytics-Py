@@ -494,6 +494,17 @@ class Direction:
                                "relative_shift_of_lattice_planes in the compute_list.")
 
 
+    def find_primitive_vectors_in_2d_sublattice(self):
+        """
+        Disclaimer: This function is ONLY applicable to 3D lattices.
+        """
+        if len(self.primitive_vectors) != 3:
+            raise ValueError(
+                f"This function is only applicable to 3D lattices, "
+                f"but got {len(self.primitive_vectors)} primitive vectors."
+            )
+
+        
 
 
 
@@ -502,7 +513,7 @@ class Direction:
 
 
 
-        pass
+        
 
 
     def __setattr__(self, name, value):
