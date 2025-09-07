@@ -220,10 +220,10 @@ class Direction:
         direction (only if return_lattice_spacing=True)
             
         *************************************************
-        Theory: Estimation of lattice interplanar spacing
+        Algorithm: Estimation of lattice interplanar spacing
         *************************************************
 
-        Let L be the lattice vector in the desired direction such that L = (a1*v1) + (a2*v2) + ... + (aN*vN)
+        Let L be the shortest lattice vector in the desired direction such that L = (a1*v1) + (a2*v2) + ... + (aN*vN)
         where a1, a2, ..., aN are integer coefficients of the linear combination of primitive lattice vectors 
         v1, v2, ..., vN. Now the number of planes of lattice sites within one lattice spacing must equal the number 
         of possible values of L.((m1*v1) + (m2*v2) + ... + (mN*vN)) in the interval (0, lattice_spacing**2], 
@@ -374,22 +374,128 @@ class Direction:
         Calculates the smallest relative shift vectors among consecutive lattice planes along each requested direction.
 
         ************************************************************************************************************
-        Theory: Finding the smallest relative displacement vector(s) of lattice planes w.r.t. any one of them within 
-                one lattice spacing along the requested direction
+        Algorithm: Finding the smallest relative shift vector(s) of consecutive lattice planes
         ************************************************************************************************************
 
-        For this we need to solve the following convex optimization problem with integer variables:
-            
-            Minimize sum_i sum_j m_i*m_j*(v_i.v_j) (where variable integers m_i and integer constants p_i_I are same as in Ineq 2)
-            s.t.
-                m1*p1_I + m2*p2_I + ... + mN*pN_I = 0 or 1 or ... (mul-1)
-            (Depending on what you put on the right hand side of the constraint equation, 
-            you get the displacement for that particular lattice plane) 
+        Let A be the shortest lattice vector in the desired direction such that A = (a1*v1) + (a2*v2) + ... + (aN*vN)
+        where a1, a2, ..., aN are integer coefficients of the linear combination of primitive lattice vectors 
+        v1, v2, ..., vN. With mul being the multiplicity, A/mul is the shortest vector between two planes of 
+        lattice sites in the desired direction.
 
-        Suppose one solution of its optimization is m1', m2', ..., mN'
-        Then the corresponding displacement vector will be 
-        (m1'*v1 + m2'*v2 + ... + mN'*vN) - ((L.(m1'*v1 + m2'*v2 + ... + mN'*vN)/|L|^2) L) -------> expr "disp"
+        Let R = (r1*v1) + (r2*v2) + ... + (rN*vN) be the shortest relative shift vector(s) we are after. 
+        One can easily deduce that (R + A/mul) is the shortest lattice vector between two consecutive lattice
+        planes in the desired direction. This dictates {r_i + (a_i/mul)} to be setwise coprime integers 
+        (Note: {r_i} and {a_i/mul} are floats).
+
+        Let {c_i} be the set of {ceil(a_i/mul)} integers and {f_i} be the set of {floor(a_i/mul)} integer.
+        Let D = [(d1_1, d2_1), (d1_2, d2_2), ..., (d1_i, d2_i), ..., (d1_N, d2_N)] be a list of N float 
+        tuples; defined as d1_i = c_i-(a_i/mul) (hence positive, <1) and d2_i = f_i-(a_i/mul) (hence negative, >-1).
+
+        Taking one fraction from each tuple in D, one can construction a N-dimensional vector which when added to 
+        L/mul gives a vector joining lattice points across two consecutive lattice planes. There are 2^N such 
+        vectors possible. Any of these vectors can be our desired R vector, that is, shortest relative shift vector. 
+        We first need to enumerate this collection of 2^N vectors.
+        (HERE ONE CAN EASILY SEE THAT THIS ALGORITHM HAS EXPONENTIAL COMPLEXITY WITH RESPECT TO DIMENSION N AND 
+        IT IS MEANT FOR NO HIGHER THAN 3 DIMENSIONAL LATTICES)
+
+        Each of these 2^N enumerated vectors serves as seed for generating more potential vector candidates for R as follows.
+
+        Let's say one of these 2^N enumerated vector is (x1 v1 + x2 v2 + x3 v3 + ...).
+        One can then generate infinitely many vectors from this seed vector as follows
+        (I1+x1) v1 + (I2+x2) v2 + (I3+x3) v3 + ... where I1, I2, ... IN are integers.
+
+        The magnitude of these vectors can then be written as 
+        [x].T Q [x] + [I].T Q [I] + L [I]
+        where [x] := [x1, x2, x3, ...].T
+              [I] := [I1, I2, I3, ...].T
+              Q := Gram matrix with the primitive vectors v1, v2, ...
+              L := [2(x2 v1.v2 + x3 v1.v3 + ...), 2(x1 v1.v2 + v3 v2.v3 + ...), 2(x1 v1.v3 + x2 v2.v3 + ...), ...]
+
+        The first two terms with Gram matrix Q are positive. And we must only consider those integers [I] which 
+        results in negative ([I].T Q [I] + L [I]) since we are after the shortest relative shift vectors.
+
+        These are all the integer vectors [I] for which vectors M[I] - M[I]* lie inside the Euclidean ball of radius 
+        sqrt(0.25 L Q^-1 L.T), where Q = M.T M (Cholesky) and
+        [I]* = -0.5 Q^-1 L.T
+
+        So the enumeration is in two steps:
+        1. Enumerate the 2^N vectors of fractions [x]
+        2. For each of the above vector enumerate the admissible [I]
+
+        Finally you will get a long list of vectors [x] + [I] ([I] depending on [x])
+        From this list we remove the ones which when added to A/mul the resultant vectors are not setwise coprime.
+
+        Out of the remaining vectors we search for the ones with the shortest length, that will be our collection of 
+        shortest relative shift vector R
+
         """
+
+        if np.shape(self.primitive_vectors)[1] > 3:
+            print("Warning: This function is NOT recommended for dimension higher than 3, owing to exponential scaling")
+            if input("Press 1 if you still want to continue, else press 0") == 0:
+                return
+            else:
+                pass
+
+        a = (self.shortest_lattice_vectors.T/self.multiplicity).T
+        c = np.ceil(a); f = np.floor(a)
+        d1 = c - a; d2 = f - a
+
+        ### Now we will enumerate the 2^N vectors
+        
+        # Generate all binary masks using division and modulus
+        numbers = np.arange(2**N)[:, None]     # shape (2^N, 1)
+        divisors = 2 ** np.arange(N)           # shape (N,)
+        masks = (numbers // divisors) % 2      # shape (2^N, N)
+        del number, divisors
+        
+        # Expand for broadcasting
+        d1 = d1[:, None, :]                # (M, 1, N)
+        d2 = d2[:, None, :]                # (M, 1, N)
+        masks = masks[None, :, :]          # (1, 2^N, N)
+        
+        # Select from d1 or d2 depending on mask
+        x = np.where(masks, d2, d1)  # (M, 2^N, N)
+        del masks
+
+        ### Gram matrix primitive lattice vectors
+        gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
+
+        ### Cholesky decomposition of gram matrix
+        M = np.linalg.cholesky(gram_matrix)
+
+        ### The L matrix
+        G = gram_matrix.copy()
+        np.fill_diagonal(G, 0)
+        L = 2 * np.einsum('mjn,nk->mjk', x, G) 
+        del G
+
+        ### Radius of the Eucleadian ball
+        # Precompute inverse of gram_matrix
+        Ginv = np.linalg.inv(gram_matrix)
+    
+        # Use einsum to compute quadratic form: L @ Ginv @ L^T
+        quad = np.einsum('mjn,nk,mjk->mj', L, Ginv, L)
+        
+        # Final sqrt with factor 0.25
+        Radius = np.sqrt(0.25 * quad)
+        del quad
+
+        ### I_star
+        I_star = -0.5 * np.einsum('mjn,nk->mjk', L, Ginv)
+        del Ginv
+
+        
+
+
+
+
+
+
+
+
+
+
 
         pass
 
