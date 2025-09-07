@@ -107,11 +107,8 @@ class Direction:
         self._execute_pipeline()
 
     def _execute_pipeline(self):
-        compute_element_to_method_map = {
-            'lattice_spacing': self._compute_lattice_spacing,
-        }
         for element in self._compute_pipeline:
-            compute_element_to_method_map[element]()
+            self.__dict__["_compute_"+element]()
 
     def _compute_lattice_spacing(self):
 
@@ -486,7 +483,15 @@ class Direction:
                 self._shortest_relative_shift_vectors.append(vecs[vecs_inds])
 
         
-
+    @property
+    def shortest_relative_shift_vectors(self):
+        if hasattr(self, '_shortest_relative_shift_vectors'):
+            return self._shortest_relative_shift_vectors
+        else:
+            raise RuntimeError("shortest_relative_shift_vectors for lattice planes perpendicular "+
+                               "to the requested directions have not been computed yet. \n"+
+                               "Please run the compute() method first with "+
+                               "relative_shift_of_lattice_planes in the compute_list.")
 
 
 
