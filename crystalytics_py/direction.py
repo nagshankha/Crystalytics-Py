@@ -274,7 +274,7 @@ class Direction:
 
         multiplicity = I * self.lattice_spacings**2
         if np.allclose(multiplicity, np.round(multiplicity)):
-            self._multiplicity = multiplicity
+            self._multiplicity = multiplicity.astype(int)
         else:
             sel = np.invert(np.isclose(multiplicity, np.round(multiplicity)))
             raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
@@ -283,72 +283,6 @@ class Direction:
         self._lattice_interplanar_spacings = self.lattice_spacings/self._multiplicity
 
         
-
-        # Estimating smallest relative displacents of lattice planes w.r.t any one of them
-        # if return_relative_displacements is True
-        if return_relative_displacements:
-            relative_displacements = [] # Initiating empty list
-            for dir_count in np.arange(len(multiplicity)):
-                # dir_count: index iterating over the requested directions
-                # Function for evaluating expr "disp" for a particular requested direction
-                disp_func = lambda x: (x - 
-                            (np.dot(np.dot(self.primitive_vecs.T, x),
-                                    np.dot(self.primitive_vecs.T, dir_lattice_vecs[dir_count]))/
-                            lattice_spacings[dir_count]**2 * dir_lattice_vecs[dir_count]))
-                relative_displacements.append([]) # appending an empty list to fill in entries for this
-                                                # particular requested direction (index: dir_count)
-                for p_count in np.arange(multiplicity[dir_count]-1):
-                # p_count: index iterating over the lattice planes within one lattice spacing (except one)
-                # along the particular requested direction (index: dir_count)
-                coeff_norm = (coeff.T * coeff_den_lcm.astype(float) # coeff normalized by multiplying it's entries by the lcm of the 
-                                / coeff_num_gcd.astype(float)).T      # denominators and dividing by the gcd of the numerators
-                
-                objective_func = lambda x: np.sum(np.outer(x,x)*metric_tensor) # Objective function for the minimization problem
-                constraint_func = lambda x: np.sum(x*coeff_norm[dir_count])-p_count-1 # Constraint function equating to zero 
-                                                                                        # for the minimization problem
-                # Solving the optimization problem
-                res = optimize.minimize(objective_func, np.zeros(len(self.primitive_vecs)),
-                                    method='SLSQP', constraints = (
-                                    {'type':'eq', 'fun': constraint_func}), options = {'ftol':1e-8})
-                res.x[np.isclose(res.x, 0)] = 0
-                # Since the objective function is convex the problem will have a unique minima (consider real variables)
-                # However since our minimization problem needs the variable to be integer, there won't be a unique minima
-                # unless the above minimization yield integers for all elements of the optimum vector.
-                if np.allclose(res.x, np.round(res.x)):
-                    # checks whether all elements of the optimal vector are integers
-                    relative_displacements[dir_count].append(disp_func(res.x))
-                else:
-                    #**** Method 1 (worked correctly for fcc but might not work for some systems since it has some parameter that can be tuned!) ***
-                    #check_int = np.isclose(res.x, np.round(res.x))
-                    #res.x[check_int] = np.round(res.x)[check_int]
-                    #print 'res.x', res.x 
-                    #int_floor = np.floor(res.x)
-                    #int_arr = np.array(list(itertools.product(*[np.arange(y, y+2) 
-                    #          if np.invert(check_int)[i] else [y] for i,y 
-                    #          in enumerate(int_floor)])))
-                    #int_satisfy_contraint = np.array([np.isclose(constraint_func(y), 0) 
-                    #                                  for y in int_arr])
-                    #int_arr = int_arr[int_satisfy_contraint]
-                    #**** Method 2 (should work for all cases) ***
-                    int_arr = findingNearestIntSoln2LinDiophantineEq(res.x, coeff_norm[dir_count], p_count+1)
-                    obj_values = np.array([objective_func(y) for y in int_arr])
-                    int_arr = int_arr[np.isclose(obj_values, min(obj_values))]
-                    relative_displacements[dir_count].append(
-                            np.array([disp_func(y) for y in int_arr]))  
-                if basis_relative_displacements == 'global_orthonormal':
-                    relative_displacements[dir_count][p_count] = np.dot(
-                    self.primitive_vecs.T, relative_displacements[dir_count][p_count].T).T
-                relative_displacements[dir_count][p_count][np.isclose(
-                                relative_displacements[dir_count][p_count], 0)] = 0
-
-            return operator.itemgetter(*np.nonzero([True, True, return_multiplicity, return_lattice_spacing])[0])((
-                            lattice_interplanar_spacings, relative_displacements, multiplicity, lattice_spacings))   
-
-        else:
-            return operator.itemgetter(*np.nonzero([True, return_multiplicity, return_lattice_spacing])[0])((
-                            lattice_interplanar_spacings, multiplicity, lattice_spacings))  
-
-
     @property
     def lattice_interplanar_spacings(self):
         if hasattr(self, '_lattice_interplanar_spacings'):
@@ -414,15 +348,15 @@ class Direction:
         The first two terms with Gram matrix Q are positive. And we must only consider those integers [I] which 
         results in negative ([I].T Q [I] + L [I]) since we are after the shortest relative shift vectors.
 
-        These are all the integer vectors [I] for which vectors M[I] - M[I]* lie inside the Euclidean ball of radius 
-        sqrt(0.25 L Q^-1 L.T), where Q = M.T M (Cholesky) and
+        These are all the integer vectors [I] for which vectors chol_mat[I] - chol_mat[I]* lie inside the Euclidean ball of radius 
+        sqrt(0.25 L Q^-1 L.T), where Q = chol_mat.T chol_mat (Cholesky) and
         [I]* = -0.5 Q^-1 L.T
 
         So the enumeration is in two steps:
         1. Enumerate the 2^N vectors of fractions [x]
         2. For each of the above vector enumerate the admissible [I]
 
-        Finally you will get a long list of vectors [x] + [I] ([I] depending on [x])
+        Finally you will get a long list of vectors [x] + [I] ([I] depending on [x]), let's say x2
         From this list we remove the ones which when added to A/mul the resultant vectors are not setwise coprime.
 
         Out of the remaining vectors we search for the ones with the shortest length, that will be our collection of 
@@ -441,7 +375,7 @@ class Direction:
         c = np.ceil(a); f = np.floor(a)
         d1 = c - a; d2 = f - a
 
-        ### Now we will enumerate the 2^N vectors
+        ### First we will enumerate the 2^N vectors
         
         # Generate all binary masks using division and modulus
         numbers = np.arange(2**N)[:, None]     # shape (2^N, 1)
@@ -458,32 +392,98 @@ class Direction:
         x = np.where(masks, d2, d1)  # (M, 2^N, N)
         del masks
 
-        ### Gram matrix primitive lattice vectors
+        # Recalling the meaning of the dimension M and N
+        # M := number of requested directions, that is, 
+        #      len(self.directions)
+        # N := Spatial dimension
+
+        ### We will now enumerate the admissible integer vectors [I] 
+        ### for each of the 2^N vectors enumerate above
+
+        ## Gram matrix primitive lattice vectors
         gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
 
-        ### Cholesky decomposition of gram matrix
-        M = np.linalg.cholesky(gram_matrix)
-
-        ### The L matrix
+        ## The L matrix
         G = gram_matrix.copy()
         np.fill_diagonal(G, 0)
         L = 2 * np.einsum('mjn,nk->mjk', x, G) 
         del G
 
-        ### Radius of the Eucleadian ball
+        ## I_star
         # Precompute inverse of gram_matrix
         Ginv = np.linalg.inv(gram_matrix)
-    
+        I_star = -0.5 * np.einsum('mjn,nk->mjk', L, Ginv)
+
+        ## Radius of the Eucleadian ball         
         # Use einsum to compute quadratic form: L @ Ginv @ L^T
-        quad = np.einsum('mjn,nk,mjk->mj', L, Ginv, L)
-        
+        quad = np.einsum('mjn,nk,mjk->mj', L, Ginv, L)        
         # Final sqrt with factor 0.25
         Radius = np.sqrt(0.25 * quad)
-        del quad
+        del quad, Ginv
 
-        ### I_star
-        I_star = -0.5 * np.einsum('mjn,nk->mjk', L, Ginv)
-        del Ginv
+        self._shortest_relative_shift_vectors = []
+        n_directions = len(self.directions)
+        eigs = np.linalg.eigvalsh(gram_matrix)
+        # A sanity check
+        if eigs[0] <= 0:
+            raise RuntimeError("Gram matrix must be positive definite. \n"+
+                               "Please check for possible bug in the code!")
+        min_eig = eigs[0]
+
+        # loop over the desired direction, that is, 
+        # n_directions
+        for i in range(n_directions):
+            # zero relative shift if mutliplicity is 1
+            if self.multiplicity[i]==1:
+                self._shortest_relative_shift_vectors.append(
+                    np.zeros((1,np.shape(self.directions)[1]))
+                )
+                continue
+
+            centers = I_star[i]   # (P, N)
+            shifts  = x[i]        # (P, N)
+            r_vec   = radius[i]   # (P,)
+
+            # bounding box for all j of this i
+            max_disp = (r_vec / np.sqrt(min_eig)).max()
+            low  = np.floor(centers - max_disp).min(axis=0).astype(int)
+            high = np.ceil( centers + max_disp).max(axis=0).astype(int)
+
+            # candidate integer grid for this i
+            ranges = [np.arange(low[d], high[d] + 1) for d in range(N)]
+            mesh = np.meshgrid(*ranges, indexing="ij")
+            V = np.stack([m.ravel() for m in mesh], axis=-1)  # (K, N)
+
+            # differences to all centers
+            dif = V[None, :, :] - centers[:, None, :]         # (P, K, N)
+            quad = np.einsum('pkn,nm,pkm->pk', dif, gram_matrix, dif)   # (P, K)
+            # Notice to compute quad there is no need to 
+            # explicitly perform Cholesky decomposition of gram_matrix
+
+            # check condition
+            mask = quad <= (r_vec[:, None] ** 2)              # (P, K)
+            j_idx, k_idx = np.nonzero(mask)
+
+            if j_idx.size == 0:
+                raise RuntimeError('It is not possible to have no relative '+ 
+                                   'shift vector between two consecutive '+
+                                   'lattice plane when multiplicity is not 1. \n'+
+                                   'Please check for possible bug in the code!')
+            else:
+                vecs = V[k_idx] + shifts[j_idx]
+                vecs_int = vecs + (self.shortest_lattice_vectors[i]/self.multiplicity[i])
+                if np.allclose(vecs_int, np.round(vecs_int)):
+                    vecs_int = np.round(vecs_int).astype(int)
+                    vecs_int = (vecs_int.T/np.gcd.reduce(vecs_int, axis=1)).T                    
+                    _, vecs_inds = np.unique(vecs_int, return_index = True, axis=0)
+                else:
+                    raise RuntimeError("The relative shift vectors when added to "+
+                                       "A/mul, A being the shortest lattice vector "+
+                                       "in the desired direction, then the sum must be "+
+                                       "an integer ---> which is not the case for "+
+                                       f"direction {self.directions[i]}. \n" +
+                                       "Please check for possible bug in the code!")
+                self._shortest_relative_shift_vectors.append(vecs[vecs_inds])
 
         
 
