@@ -648,8 +648,8 @@ class Direction:
                         (np.issubdtype(value.dtype, np.floating) or 
                          np.issubdtype(value.dtype, np.integer))):
                     raise ValueError("directions must be a numpy array of floats or integers")
-                elif value.ndim != 2 or value.shape[1] != self.crystal_structure.primitive_vecs.shape[0]:
-                    raise ValueError(f"directions must be a 2D array with shape (M, {self.crystal_structure.primitive_vecs.shape[0]}), "+
+                elif value.ndim != 2 or value.shape[1] != self._crystal_structure._primitive_vecs.shape[0]:
+                    raise ValueError(f"directions must be a 2D array with shape (M, {self._crystal_structure._primitive_vecs.shape[0]}), "+
                                      "where M is the number of directions")
                 elif hasattr(self, "basis_directions") and self.basis_directions == "primitive_vector":
                     if not np.issubdtype(value.dtype, np.integer):
@@ -663,7 +663,7 @@ class Direction:
                 if value not in ("global_orthonormal", "primitive_vector"):
                     raise ValueError(f"Invalid basis_directions: {value} "+"\n"+
                                      "Allowed values are 'global_orthonormal' or 'primitive_vector'")
-                elif hasattr(self, "directions") and np.issubdtype(self.directions.dtype, np.floating):
+                elif hasattr(self, "directions") and np.issubdtype(self._directions.dtype, np.floating):
                     if value == "primitive_vector":
                         raise ValueError("basis_directions cannot be 'primitive_vector' when " +
                                          "directions is an array of floats")
