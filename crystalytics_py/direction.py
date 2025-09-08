@@ -1,18 +1,6 @@
 from crystal_structure import CrystalStructure
 import numpy as np
-import fractions
 from utils import *
-import some_math_operations as sm
-import miscellaneous_routines as misc
-import warnings
-import collections
-from scipy import optimize
-import itertools
-import operator
-import copy
-import sympy
-from sympy.solvers.diophantine.diophantine import diop_linear
-from sympy.core.containers import Tuple
 
 class Direction:
 
