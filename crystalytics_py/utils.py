@@ -67,12 +67,11 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
     a_min = np.array([a[dev_min_inds_list[i][np.argmin(dev[i][dev_min_inds_list[i]])]] 
                       for i in range(len(u))])
     res = optimize.minimize(func1, x0=a_min)
-    if res.success:
-        v_new = np.round(res.x*u.T).astype(int).T
-        v_new = (v_new.T/np.gcd.reduce(v_new, axis=1)).T
-        return v_new.astype(int), 0.5*(1-np.sum(u*v_new, axis=1)/np.linalg.norm(v, axis=1))
-    else:
-        raise RuntimeError(f"Optimization failed with message: \n"+res.message)  
+    if not res.success:      
+       print(f"Warning: Optimization failed with message: \n"+res.message) 
+    v_new = np.round(res.x*u.T).astype(int).T
+    v_new = (v_new.T/np.gcd.reduce(v_new, axis=1)).T
+    return v_new.astype(int), 0.5*(1-np.sum(u*v_new, axis=1)/np.linalg.norm(v, axis=1)) 
     
 
 def inrange(vec, mini, maxi, bounds=('open', 'open')):
