@@ -263,7 +263,7 @@ class Direction:
         if row_inds != np.arange(len(self.directions)):
             raise RuntimeError(f"No direction can have all {self.primitive_vectors.shape[1]} "+
                                 "values of I as zero. There must be a bug in the code. Please check!")
-        I = I_arr[[row_inds, inds_nonnan_I[1][np.r_[0, np.cumsum(counts_nonnan_I)[:-1]]]]]
+        I = I_arr[(row_inds, inds_nonnan_I[1][np.r_[0, np.cumsum(counts_nonnan_I)[:-1]]])]
         if not np.allclose(np.repeat(I, counts_nonnan_I), I_arr[inds_nonnan_I]):
             sel = inds_nonnan_I[0][np.unique(np.nonzero(
                 ~np.isclose(np.repeat(I, counts_nonnan_I), I_arr[inds_nonnan_I]))[0])]
