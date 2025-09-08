@@ -1,6 +1,6 @@
-from crystal_structure import CrystalStructure
+from .crystal_structure import CrystalStructure
 import numpy as np
-from utils import *
+from .utils import *
 
 class Direction:
 
