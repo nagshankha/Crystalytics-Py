@@ -247,15 +247,31 @@ class Direction:
         integer_coeff, cosine_deviations = \
             shortest_collinear_vector_with_integer_components(coeff,
                                                               max_length=self._max_lattice_vector_length)
+        
+        ### Estimating the factor I
+        
+        # Avoid division by zero by masking
+        mask = ~np.isclose(coeff, 0)
+        I = np.empty_like(integer_coeff, dtype=float)
+        I[:] = np.nan  # mark invalid entries as nan
+        I[mask] = integer_coeff[mask] / coeff[mask]
 
-        I = integer_coeff/coeff
-        if not np.allclose(np.round(I).T-np.round(I)[:,0], 0.0):
-            sel = np.invert(np.all(np.isclose(np.round(I).T-np.round(I)[:,0], 0.0), axis=0))
-            raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
-                               f"the I is not same in all dimensions \n {I[sel]}. \n"+
-                               f"The cosine deviations for these directions are \n {cosine_deviations[sel]}")
+        # Now check consistency, ignoring nans
+        if not np.allclose(I.T - I[:, 0][:, None], 0.0, equal_nan=True):
+            sel = np.invert(np.all(np.isclose(I.T - I[:, 0][:, None], 0.0, equal_nan=True), axis=0))
+            raise RuntimeError(
+                f"For directions:\n {self.directions[sel]} \n"
+                f"the I is not same in all dimensions \n {I[sel]}. \n"
+                f"The cosine deviations for these directions are \n {cosine_deviations[sel]}"
+            )
         else:
-            I = np.round(I)[:,0]
+            inds_nonnan_I = np.nonzero(~np.isnan(I))
+            row_inds, counts_nonnan_I = np.unique(inds_nonnan_I[0], return_counts=True)
+            # Sanity check
+            if row_inds != np.arange(len(self.directions)):
+                raise RuntimeError(f"No direction can have all {self.primitive_vectors.shape[1]} "+
+                                   "values of I as zero. There must be a bug in the code. Please check!")
+            I = I[[row_inds, inds_nonnan_I[1][np.r_[0, np.cumsum(counts_nonnan_I)[:-1]]]]]
 
         multiplicity = I * self.lattice_spacings**2
         if np.allclose(multiplicity, np.round(multiplicity)):
