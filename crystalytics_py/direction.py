@@ -383,7 +383,7 @@ class Direction:
         numbers = np.arange(2**N)[:, None]     # shape (2^N, 1)
         divisors = 2 ** np.arange(N)           # shape (N,)
         masks = (numbers // divisors) % 2      # shape (2^N, N)
-        del number, divisors
+        del numbers, divisors
         
         # Expand for broadcasting
         d1 = d1[:, None, :]                # (M, 1, N)
