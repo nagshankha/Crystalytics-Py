@@ -252,7 +252,7 @@ class Direction:
         if not np.allclose(np.round(I).T-np.round(I)[:,0], 0.0):
             sel = np.invert(np.all(np.isclose(np.round(I).T-np.round(I)[:,0], 0.0), axis=0))
             raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+
-                               f"the I is not unique for all dimensions \n {I[sel]}. \n"+
+                               f"the I is not same in all dimensions \n {I[sel]}. \n"+
                                f"The cosine deviations for these directions are \n {cosine_deviations[sel]}")
         else:
             I = np.round(I)[:,0]
