@@ -397,7 +397,7 @@ class Direction:
         ### We will now enumerate the admissible integer vectors [I] 
         ### for each of the 2^N vectors enumerate above
 
-        ## Gram matrix primitive lattice vectors
+        ## Gram matrix of primitive lattice vectors
         gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
 
         ## The L matrix
@@ -494,15 +494,142 @@ class Direction:
                                "relative_shift_of_lattice_planes in the compute_list.")
 
 
-    def find_primitive_vectors_in_2d_sublattice(self):
+    def _compute_primitive_vectors_in_2d_sublattice(self):
         """
         Disclaimer: This function is ONLY applicable to 3D lattices.
         """
+
+        from scipy.optimize import minimize_scalar
+
         if len(self.primitive_vectors) != 3:
             raise ValueError(
                 f"This function is only applicable to 3D lattices, "
                 f"but got {len(self.primitive_vectors)} primitive vectors."
             )
+
+        # self.shortest_relative_shift_vectors*mul are lattice vectors in the 
+        # 2d sublattice. Since they are all of the same length, let's choose 
+        # the first one as a primitive vector for the 2D sublattice
+
+        ## Gram matrix of primitive lattice vectors
+        gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
+
+        ## Transform vector from primitive vector basis to orthonormal basis
+        def convert_primitive_to_orthonormal_basis(v):
+            return np.sum(v*self.primitive_vectors.T, axis=1)
+
+        ## Transform vector from orthonormal basis to primitive vector basis
+        def convert_orthonormal_to_primitive_basis(v):
+            return np.linalg.solve(self.primitive_vectors.T, v)
+
+        self._primitive_vectors_in_2d_sublattice = []
+        self._3d_to_2d_transformation_matrices = []
+
+        for i in len(self.directions):
+
+            ## Area of parallelogram enclosed by primitive vectors of 2d sublattice
+            Area = (abs(np.linalg.det(self.primitive_vectors))/
+                        self.lattice_interplanar_spacings[i])
+
+            v1 = self.shortest_relative_shift_vectors[i][0]*self.multiplicity[i]
+
+            # sanity check
+            if np.allclose(v1, np.round(v1)):
+                v1_orthonorm = convert_primitive_to_orthonormal_basis(v1)
+                v1_unit_orthonorm = v1_orthonorm/np.linalg.norm(v1_orthonorm)
+            else:
+                raise RuntimeError("shortest relative shift vectors multiplied "+
+                                   "by multiplicity are lattice vectors and "+
+                                   "since they are expressed in terms of primitive "+
+                                   "vectors their components needs to be integers, "+
+                                   "which is not the case here. \n"+
+                                   "Please check for possible bug in the code!")
+
+            # The desired direction in orthonormal coordinates
+            u_orthonorm = convert_primitive_to_orthonormal_basis(
+                                    self.shortest_lattice_vectors[i])
+            u_unit_orthonorm = u_orthonorm/np.linalg.norm(u_orthonorm)
+
+            # Length of vector v1
+            s1 = np.sum(np.outer(v1)*gram_matrix)
+
+            # v2 generator
+            def generate_v2(alpha):
+                v2_unit = ((np.cos(alpha)*v1_unit_orthonorm) + 
+                           (np.sin(alpha)*np.cross(u_unit_orthonorm, v1_unit_orthonorm)))
+                # sanity check:
+                assert np.isclose(np.linalg.norm(v2_unit), 1), "v2_unit must be a unit vector, check code for bug!"
+                v2_prim = convert_orthonormal_to_primitive_basis(v2_unit)
+                v2_prim_ints = shortest_collinear_vector_with_integer_components(v2_prim, 10)
+                return v2_unit, v2_prim_ints
+
+            # Loss function
+            def loss(alpha):
+                v2_prim_ints = generate_v2(alpha)[1]
+                s2 = np.sum(np.outer(v2_prim_ints)*gram_matrix)
+                return abs(Area - s1 * s2 * np.sin(alpha))
+
+            # -----------------------------
+            # Local optimization
+            # -----------------------------
+            res = minimize_scalar(
+                loss,
+                bounds=(1e-6, np.pi/2 + 1e-3),
+                method="bounded",
+                options={"xatol": 1e-6}
+            )
+
+            best_alpha = res.x
+            best_loss = res.fun
+
+            v2_unit, v2_prim_ints = generate_v2(best_alpha)
+            v2_orthonorm = convert_primitive_to_orthonormal_basis(v2_prim_ints)
+            v2_unit_orthonorm = v2_orthonorm/np.linalg.norm(v2_orthonorm)
+            if np.isclose(best_loss, 0) and np.allclose(v2_unit, v2_unit_orthonorm):
+                v2 = v2_prim_ints
+            else:
+                raise RuntimeError("Failed to find a primitive vector couple to v1")
+
+            B = np.array([convert_primitive_to_orthonormal_basis(v1),
+                          convert_primitive_to_orthonormal_basis(v2)])
+
+            from lattice_utils import reduce_and_transform_lattice_vecs
+            _, B_coords, Q, _ = reduce_and_transform_lattice_vecs(B)
+
+            self._primitive_vectors_in_2d_sublattice.append(B_coords)
+            self._3d_to_2d_transformation_matrices.append(Q)
+
+        self._primitive_vectors_in_2d_sublattice = np.array(self._primitive_vectors_in_2d_sublattice)
+        self._3d_to_2d_transformation_matrices = np.array(self._3d_to_2d_transformation_matrices)
+
+
+    @property
+    def primitive_vectors_in_2d_sublattice(self):
+        if hasattr(self, '_primitive_vectors_in_2d_sublattice'):
+            return self._primitive_vectors_in_2d_sublattice
+        else:
+            raise RuntimeError("primitive_vectors_in_2d_sublattice for lattice planes perpendicular "+
+                               "to the requested directions have not been computed yet. \n"+
+                               "Please run the compute() method first with "+
+                               "primitive_vectors_in_2d_sublattice in the compute_list.")
+
+    @property
+    def transformation_matrices_3d_to_2d(self):
+        if hasattr(self, '_3d_to_2d_transformation_matrices'):
+            return self._3d_to_2d_transformation_matrices
+        else:
+            raise RuntimeError("Transformation matrices for expressing vectors with respect to "+
+                               "orthonormal basis with two basis vectors in lattice plane perpendicular "+
+                               "to the requested directions have not been computed yet. \n"+
+                               "Please run the compute() method first with "+
+                               "primitive_vectors_in_2d_sublattice in the compute_list.")
+
+
+
+
+
+
+
 
         
 
