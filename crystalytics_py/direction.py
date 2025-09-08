@@ -473,10 +473,12 @@ class Direction:
                                    'Please check for possible bug in the code!')
             else:
                 vecs = V[k_idx] + shifts[j_idx]
+                vecs = vecs[np.argmin(np.linalg.norm(vecs, axis=1))]
                 vecs_int = vecs + (self.shortest_lattice_vectors[i]/self.multiplicity[i])
                 if np.allclose(vecs_int, np.round(vecs_int)):
                     vecs_int = np.round(vecs_int).astype(int)
-                    vecs_int = (vecs_int.T/np.gcd.reduce(vecs_int, axis=1)).T                    
+                    mask = ~np.all(vecs_int==0, axis=1)
+                    vecs_int[mask] = (vecs_int[mask].T/np.gcd.reduce(vecs_int[mask], axis=1)).T 
                     _, vecs_inds = np.unique(vecs_int, return_index = True, axis=0)
                 else:
                     raise RuntimeError("The relative shift vectors when added to "+
