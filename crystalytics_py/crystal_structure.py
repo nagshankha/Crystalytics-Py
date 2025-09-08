@@ -1,5 +1,6 @@
 import numpy as np
 from .utils import *
+import warnings
 
 class CrystalStructure():
    
@@ -964,7 +965,7 @@ class CrystalStructure():
             raise ValueError('Number of primitive vectors must equal the number of dimensions. Therefore '+
                              'member "primitive_vecs" must be a square matrix with number of rows/column '+
                              'equal to the number of dimensions')
-         elif not misc.inrange(np.shape(value)[0], 2, 3, ('closed', 'closed')):
+         elif not inrange(np.shape(value)[0], 2, 3, ('closed', 'closed')):
             warnings.warn('class CrystalStructure: The routines in this class or subclasses does not gaurantee '+
                           'to work correctly for dimensions other than 2 or 3')
          else:
@@ -985,7 +986,7 @@ class CrystalStructure():
          elif not isinstance(value, np.ndarray):
             raise TypeError('class CrystalStructure: The member "motifs" must be a numpy ndarray or None')
          else:
-            if not np.all(misc.inrange(value, 0, 1, ('closed', 'open'))):
+            if not np.all(inrange(value, 0, 1, ('closed', 'open'))):
                raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1)')
             elif (len(np.shape(value)) == 1) or ((len(np.shape(value)) == 2) and (np.shape(value)[0] == 1)): 
                self.__dict__[name] = np.zeros(np.shape(self.primitive_vecs)[0])[None, :]
