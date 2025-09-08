@@ -66,7 +66,7 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
                            f"{v[list(set(np.arange(len(u)))-set(inds[0]))]}")
     a_min = np.array([a[dev_min_inds_list[i][np.argmin(dev[i][dev_min_inds_list[i]])]] 
                       for i in range(len(u))])
-    res = optimize.minimize(func1, x0=a_min)
+    res = optimize.minimize(func1, x0=a_min, method='Nelder-Mead', tol=1e-6)
     if not res.success:      
        print(f"Warning: Optimization failed with message: \n"+res.message) 
     v_new = np.round(res.x*u.T).astype(int).T
