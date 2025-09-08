@@ -637,13 +637,13 @@ class Direction:
 
         match name:
 
-            case "crystal_structure":
+            case "_crystal_structure":
                 if isinstance(value, CrystalStructure):
                     self.__dict__[name] = value
                 else:
                     raise ValueError("crystal_structure must be an instance of CrystalStructure")
                 
-            case "directions":
+            case "_directions":
                 if not (isinstance(value, np.ndarray) and 
                         (np.issubdtype(value.dtype, np.floating) or 
                          np.issubdtype(value.dtype, np.integer))):
@@ -658,7 +658,7 @@ class Direction:
                 else:
                     self.__dict__[name] = value
 
-            case "basis_directions":
+            case "_basis_directions":
                 # Ensure it's one of the allowed values
                 if value not in ("global_orthonormal", "primitive_vector"):
                     raise ValueError(f"Invalid basis_directions: {value} "+"\n"+
@@ -670,12 +670,6 @@ class Direction:
                 else:
                     self.__dict__[name] = value
 
-            case "limit_denom":
-                # Ensure it's a positive integer
-                if not isinstance(value, int) or value <= 0:
-                    raise ValueError("limit_denom must be a positive integer")
-                else:
-                    self.__dict__[name] = value
             case "verbose":
                 # Ensure it's a boolean
                 if not isinstance(value, bool):
