@@ -171,18 +171,18 @@ def reduce_and_transform_lattice_vecs(B, method="auto", search_radius=4):
     # reduce
     if method == "auto":
         if M == 2:
-            B_reduced, U = gauss_reduce_rows(B)
+            B_reduced, U = gauss_reduce(B)
         else:
-            B_reduced, U = minkowski_reduce_rows(B, search_radius)
+            B_reduced, U = minkowski_reduce(B, search_radius)
     elif method == "gauss":
-        B_reduced, U = gauss_reduce_rows(B)
+        B_reduced, U = gauss_reduce(B)
     elif method == "minkowski":
-        B_reduced, U = minkowski_reduce_rows(B, search_radius)
+        B_reduced, U = minkowski_reduce(B, search_radius)
     else:
         raise ValueError("Unknown method")
 
     # orthonormal basis
-    Q = build_Q_from_Brows(B_reduced)
+    Q = build_Q_from_B(B_reduced)
 
     # intrinsic coords: project rows of B_reduced into new basis
     padded_coords = B_reduced @ Q    # (M,N)

@@ -355,6 +355,8 @@ class Direction:
                 return
             else:
                 pass
+        else:
+            N = np.shape(self.primitive_vectors)[1]
 
         a = (self.shortest_lattice_vectors.T/self.multiplicity).T
         c = np.ceil(a); f = np.floor(a)
@@ -403,7 +405,7 @@ class Direction:
         # Use einsum to compute quadratic form: L @ Ginv @ L^T
         quad = np.einsum('mjn,nk,mjk->mj', L, Ginv, L)        
         # Final sqrt with factor 0.25
-        Radius = np.sqrt(0.25 * quad)
+        radius = np.sqrt(0.25 * quad)
         del quad, Ginv
 
         self._shortest_relative_shift_vectors = []
