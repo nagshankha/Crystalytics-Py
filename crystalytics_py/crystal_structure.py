@@ -80,8 +80,8 @@ class CrystalStructure():
       lattice vectors and fracional coordinates of the motifs w.r.t. those
       primitive lattice vectors.
       """
-      self.primitive_vecs = primitive_vecs
-      self.motifs = motifs
+      self._primitive_vecs = primitive_vecs
+      self._motifs = motifs
       
 
    ############################################################
@@ -955,15 +955,15 @@ class CrystalStructure():
       then motif is set to np.zeros(Ndims) where Ndims is the number of dimensions.
       If 2D then each row correspond to a different motif."""
 
-      if (name == 'primitive_vecs'):
+      if (name == '_primitive_vecs'):
          if not isinstance(value, np.ndarray):
-            raise TypeError('class CrystalStructure: The member "primitive_vecs" must be a numpy ndarray')
+            raise TypeError('class CrystalStructure: The member "_primitive_vecs" must be a numpy ndarray')
          elif len(np.shape(value)) != 2:
-            raise ValueError('class CrystalStructure: The member "primitive_vecs" must be a 2D array with '+ 
+            raise ValueError('class CrystalStructure: The member "_primitive_vecs" must be a 2D array with '+ 
                              'each row corresponding to a different lattice vector')
          elif np.shape(value)[0] != np.shape(value)[1]:
             raise ValueError('Number of primitive vectors must equal the number of dimensions. Therefore '+
-                             'member "primitive_vecs" must be a square matrix with number of rows/column '+
+                             'member "_primitive_vecs" must be a square matrix with number of rows/column '+
                              'equal to the number of dimensions')
          elif not inrange(np.shape(value)[0], 2, 3, ('closed', 'closed')):
             warnings.warn('class CrystalStructure: The routines in this class or subclasses does not gaurantee '+
@@ -972,29 +972,29 @@ class CrystalStructure():
             if value.dtype == int:
                value = value.astype(float)               
             elif value.dtype != float:
-               raise TypeError('The member "primitive_vecs" must be of dtype float')
+               raise TypeError('The member "_primitive_vecs" must be of dtype float')
             # Checking whether the three lattice vectors are coplanar (which must not be).
             if np.isclose(np.linalg.det(value), 0.0):
                raise ValueError('class CrystalStructure: The lattice vectors are linearly dependent')
             else:
                self.__dict__[name] = value	 
 
-      elif (name == 'motifs'):
+      elif (name == '_motifs'):
          if value is None:
-            self.__dict__[name] = np.zeros(np.shape(self.primitive_vecs)[0])[None, :]
+            self.__dict__[name] = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
             return
          elif not isinstance(value, np.ndarray):
-            raise TypeError('class CrystalStructure: The member "motifs" must be a numpy ndarray or None')
+            raise TypeError('class CrystalStructure: The member "_motifs" must be a numpy ndarray or None')
          else:
             if not np.all(inrange(value, 0, 1, ('closed', 'open'))):
                raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1)')
             elif (len(np.shape(value)) == 1) or ((len(np.shape(value)) == 2) and (np.shape(value)[0] == 1)): 
-               self.__dict__[name] = np.zeros(np.shape(self.primitive_vecs)[0])[None, :]
+               self.__dict__[name] = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
                return
-            elif (len(np.shape(value)) == 2) and (np.shape(value)[1] != np.shape(self.primitive_vecs)[0]):
+            elif (len(np.shape(value)) == 2) and (np.shape(value)[1] != np.shape(self._primitive_vecs)[0]):
                raise ValueError('class CrystalStructure: Dimension of primitive vectors and motifs does not match')
             elif value.dtype != float:
-               raise TypeError('The member "motifs" must be of dtype float')
+               raise TypeError('The member "_motifs" must be of dtype float')
             else:
                # so that no two or more motifs sit on each other
                value = np.unique(np.round(value,decimals=8), axis=0) # And we expect the difference in fractional 
@@ -1004,14 +1004,14 @@ class CrystalStructure():
                   self.originShift4Motifs()
                   warnings.warn('The first motif was not at origin. So the motifs are translated '+
                                 'so as to have the first motif at origin. The resulting set of '+
-                                'motifs are {0}'.format(self.motifs))
+                                'motifs are {0}'.format(self._motifs))
                   return
                else:
                   return     
 
       else:
          raise NameError('class CrystalStructure: "' + name + '" is not a member of the this class. It must be ' +
-                         'either "primitive_vecs" or "motifs".')
+                         'either "_primitive_vecs" or "_motifs".')
 
    ############################################################
 
@@ -1023,8 +1023,8 @@ class CrystalStructure():
       positive fractional coordinates.
       """
       
-      self.motifs -= self.motifs[0]
-      self.motifs[self.motifs<(-2*np.finfo(float).eps)] += 1        
+      self._motifs -= self._motifs[0]
+      self._motifs[self._motifs<(-2*np.finfo(float).eps)] += 1        
    
 
 ############################*******************###################################
