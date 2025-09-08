@@ -270,7 +270,7 @@ class Direction:
             raise RuntimeError(
                 f"For directions:\n {self.directions[sel]} \n"
                 f"the I is not same in all dimensions \n {I[sel]}. \n"
-                f"The cosine deviations for these directions are \n {cosine_deviations[sel]}"
+                f"The cosine deviations for these directions are \n {cosine_deviations[sel]}")
 
         multiplicity = I * self.lattice_spacings**2
         if np.allclose(multiplicity, np.round(multiplicity)):
