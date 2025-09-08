@@ -73,3 +73,37 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
         return v_new.astype(int), 0.5*(1-np.sum(u*v_new, axis=1)/np.linalg.norm(v, axis=1))
     else:
         raise RuntimeError(f"Optimization failed with message: \n"+res.message)  
+    
+
+def inrange(vec, mini, maxi, bounds=('open', 'open')):
+
+   if not hasattr(vec, '__iter__'):
+      vec = np.array([vec])
+   
+   if not isinstance(vec, np.ndarray):
+      vec = np.array(vec)
+      
+   if (vec.dtype != int) and (vec.dtype != float):
+      raise TypeError('Input must be either of type integers or floats')
+
+   if not np.isnan(mini):
+      if bounds[0] == 'open':
+         sel1 = vec > mini
+      elif bounds[0] == 'closed':
+         sel1 = vec >= mini
+      else:
+         raise ValueError('elements of tuple bounds can take value either "open" or "closed"')
+   else:
+      sel1 = np.repeat(True, len(vec))
+
+   if not np.isnan(maxi):
+      if bounds[1] == 'open':
+         sel2 = vec < maxi
+      elif bounds[1] == 'closed':
+         sel2 = vec <= maxi
+      else:
+         raise ValueError('elements of tuple bounds can take value either "open" or "closed"')
+   else:
+      sel2 = np.repeat(True, len(vec))
+
+   return (sel1 & sel2)
