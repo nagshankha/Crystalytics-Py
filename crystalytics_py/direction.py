@@ -473,7 +473,8 @@ class Direction:
                                    'Please check for possible bug in the code!')
             else:
                 vecs = V[k_idx] + shifts[j_idx]
-                vecs = vecs[np.argmin(np.linalg.norm(vecs, axis=1))]
+                vecs_lengths = np.linalg.norm(vecs, axis=1)
+                vecs = vecs[np.nonzero(np.isclose(vecs_lengths, np.min(vecs_lengths)))[0]]
                 vecs_int = vecs + (self.shortest_lattice_vectors[i]/self.multiplicity[i])
                 if np.allclose(vecs_int, np.round(vecs_int)):
                     vecs_int = np.round(vecs_int).astype(int)
