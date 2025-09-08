@@ -53,7 +53,7 @@ class Direction:
             The crystal structure object containing primitive vectors and motifs.
         directions : np.ndarray (float)
             Array of directions along which lattice spacing is requested. Shape (M, N) where
-            N is the number of dimensions (same as crystal_structure.primitive_vecs) and
+            N is the number of dimensions (same as crystal_structure._primitive_vecs) and
             M is the number of requested directions.
         basis_directions : str, optional
             Basis in which the directions are defined. Either 'global_orthonormal' (default)
@@ -127,7 +127,7 @@ class Direction:
         if self.basis_directions == 'global_orthonormal':
             # Expressing the components of the desired directions in terms of the primitive lattice vectors
             # This is saved in self._dir_primitive for debugging purposes
-            self._dir_primitive = np.linalg.solve(self.primitive_vecs.T, self.directions.T).T
+            self._dir_primitive = np.linalg.solve(self.primitive_vectors.T, self.directions.T).T
         else:
             self._dir_primitive = self.directions.copy()
 
@@ -154,7 +154,7 @@ class Direction:
                       f"{len(self.directions)} directions. \n Please check the self._cosine_deviations > 1e-6 for such directions")
 
         # lattice spacing(s) along desired direction(s)
-        self._lattice_spacings = np.linalg.norm(np.dot(self.primitive_vecs.T, 
+        self._lattice_spacings = np.linalg.norm(np.dot(self.primitive_vectors.T, 
                                                        self._shortest_lattice_vectors.T), axis = 0)
 
 
@@ -239,7 +239,7 @@ class Direction:
         """      
 
         # Gram matrix primitive lattice vectors
-        gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
+        gram_matrix = np.dot(self.primitive_vectors, self.primitive_vectors.T)
         
         # Estimating p1, p2, ... pN
         coeff = np.dot(gram_matrix, self.shortest_lattice_vectors.T).T
@@ -388,7 +388,7 @@ class Direction:
         ### for each of the 2^N vectors enumerate above
 
         ## Gram matrix of primitive lattice vectors
-        gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
+        gram_matrix = np.dot(self.primitive_vectors, self.primitive_vectors.T)
 
         ## The L matrix
         G = gram_matrix.copy()
@@ -502,7 +502,7 @@ class Direction:
         # the first one as a primitive vector for the 2D sublattice
 
         ## Gram matrix of primitive lattice vectors
-        gram_matrix = np.dot(self.primitive_vecs, self.primitive_vecs.T)
+        gram_matrix = np.dot(self.primitive_vectors, self.primitive_vectors.T)
 
         ## Transform vector from primitive vector basis to orthonormal basis
         def convert_primitive_to_orthonormal_basis(v):
