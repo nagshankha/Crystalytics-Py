@@ -105,7 +105,7 @@ class Direction:
         if v.shape == (len(self.primitive_vectors),):
             return np.linalg.solve(self.primitive_vectors.T, v)
         elif len(v.shape)==2 and v.shape[1] == len(self.primitive_vectors):
-            return np.linalg.solve(self.primitive_vectors.T, self.directions.T).T
+            return np.linalg.solve(self.primitive_vectors.T, v.T).T
         else:
             raise ValueError("shape of input vector not appropriate")
 
