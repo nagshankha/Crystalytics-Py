@@ -173,7 +173,7 @@ class Direction:
 
         # lattice spacing(s) along desired direction(s)
         self._lattice_spacings = np.linalg.norm(self.convert_primitive_to_orthonormal_basis(
-                                                            self._shortest_lattice_vectors.T), axis = 1)
+                                                            self._shortest_lattice_vectors), axis = 1)
 
 
     @property
