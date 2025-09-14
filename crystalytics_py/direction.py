@@ -90,6 +90,19 @@ class Direction:
             cls._max_lattice_vector_length = length
         else:
             raise ValueError("max_lattice_vector_length must be a positive number")
+        
+    ## Transform vector from primitive vector basis to orthonormal basis
+    def convert_primitive_to_orthonormal_basis(self, v):
+        if v.shape == (len(self.primitive_vectors),):
+            return np.sum(v*self.primitive_vectors.T, axis=1)
+        elif len(v.shape)==2 and v.shape[1] == len(self.primitive_vectors):
+            return np.dot(v, self.primitive_vectors)
+        else:
+            raise ValueError("shape of input vector not appropriate")
+
+    ## Transform vector from orthonormal basis to primitive vector basis
+    def convert_orthonormal_to_primitive_basis(self, v):
+        return np.linalg.solve(self.primitive_vectors.T, v)
 
     def compute(self, compute_list='all'):
         self._execute_pipeline()
@@ -190,19 +203,9 @@ class Direction:
 
         1D numpy array (M,) of floats with lattice interplanar spacings corresponding to each 
         requested direction
-
-        list(len=M) of list(len=P-1) of 2D numpy array (L,N) of floats with smallest relative 
-        displacements of lattice planes w.r.t. any one of them (only if return_relative_displacements=True). 
-        M is the number of requested directions, P the number of lattice planes within one lattice 
-        spacing in any direction (The corresponding list has P-1 entries since we are considering 
-        relative displacements), L is the number of possible smallest relative displacement vectors 
-        and N is the number of dimensions of the problem.
         
         1D numpy array (M,) of ints with multiplicity corresponding to each requested direction
         (only if return_multiplicity=True)
-
-        1D numpy array (M,) of floats with lattice spacings corresponding to each requested
-        direction (only if return_lattice_spacing=True)
             
         *************************************************
         Algorithm: Estimation of lattice interplanar spacing
@@ -307,6 +310,16 @@ class Direction:
         """
         Calculates the smallest relative shift vectors among consecutive lattice planes along each requested direction.
 
+        Actions
+        ------------
+        Sets the following attributes:
+           - self._shortest_relative_shift_vectors: list(len=M) of 2D numpy array (L,N) of floats. 
+                        M is the number of requested directions, 
+                        L is the number of possible smallest relative shift vectors 
+                    and N is the spatial dimension of the problem.
+
+        Important Note: The relative shift vectors are expressed in terms of the primitive vectors
+
         ************************************************************************************************************
         Algorithm: Finding the smallest relative shift vector(s) of consecutive lattice planes
         ************************************************************************************************************
@@ -356,9 +369,11 @@ class Direction:
         1. Enumerate the 2^N vectors of fractions [x]
         2. For each of the above vector enumerate the admissible [I]
 
-        Finally you will get a long list of vectors [x] + [I] ([I] depending on [x]), let's say x2
-        From this list we remove the ones which when added to A/mul the resultant vectors are not setwise coprime.
-
+        Finally you will get a long list of vectors [x] + [I] ([I] depending on [x]), let's say x2.
+        We remove the vectors which are not perpendicular to A (our input direction).
+        For the ones which when added to A/mul the resultant vectors are not setwise coprime, 
+        we take the smallest lattice vector in that direction.
+        
         Out of the remaining vectors we search for the ones with the shortest length, that will be our collection of 
         shortest relative shift vector R
 
@@ -408,19 +423,19 @@ class Direction:
         ## The L matrix
         G = gram_matrix.copy()
         np.fill_diagonal(G, 0)
-        L = 2 * np.einsum('mjn,nk->mjk', x, G) 
+        L = 2 * np.einsum('mjn,kn->mjk', x, G) # (M, 2^N, N)
         del G
 
         ## I_star
         # Precompute inverse of gram_matrix
         Ginv = np.linalg.inv(gram_matrix)
-        I_star = -0.5 * np.einsum('mjn,nk->mjk', L, Ginv)
+        I_star = -0.5 * np.einsum('kn, mjn->mjk', Ginv, L) # (M, 2^N, N)
 
         ## Radius of the Eucleadian ball         
         # Use einsum to compute quadratic form: L @ Ginv @ L^T
         quad = np.einsum('mjn,nk,mjk->mj', L, Ginv, L)        
         # Final sqrt with factor 0.25
-        radius = np.sqrt(0.25 * quad)
+        radius = np.sqrt(0.25 * quad) # (M, 2^N)
         del quad, Ginv
 
         self._shortest_relative_shift_vectors = []
@@ -432,7 +447,7 @@ class Direction:
                                "Please check for possible bug in the code!")
         min_eig = eigs[0]
 
-        # loop over the desired direction, that is, 
+        # loop over the desired directions, that is, 
         # n_directions
         for i in range(n_directions):
             # zero relative shift if mutliplicity is 1
@@ -442,53 +457,97 @@ class Direction:
                 )
                 continue
 
-            centers = I_star[i]   # (P, N)
-            shifts  = x[i]        # (P, N)
-            r_vec   = radius[i]   # (P,)
+            centers = I_star[i]   # (2^N, N)
+            shifts  = x[i]        # (2^N, N)
+            r_vec   = radius[i]   # (2^N,)
 
-            # bounding box for all j of this i
-            max_disp = (r_vec / np.sqrt(min_eig)).max()
-            low  = np.floor(centers - max_disp).min(axis=0).astype(int)
-            high = np.ceil( centers + max_disp).max(axis=0).astype(int)
+            stop = 0; multiplier = 1
+            while stop <= 2:
+                # bounding box for all j of this i
+                max_disp = multiplier*(r_vec / np.sqrt(min_eig)).max()
+                low  = np.floor(centers - max_disp).min(axis=0).astype(int)
+                high = np.ceil( centers + max_disp).max(axis=0).astype(int)
+                multiplier=multiplier+1
 
-            # candidate integer grid for this i
-            ranges = [np.arange(low[d], high[d] + 1) for d in range(N)]
-            mesh = np.meshgrid(*ranges, indexing="ij")
-            V = np.stack([m.ravel() for m in mesh], axis=-1)  # (K, N)
+                # candidate integer grid for this i
+                ranges = [np.arange(low[d], high[d] + 1) for d in range(N)]
+                mesh = np.meshgrid(*ranges, indexing="ij")
+                V = np.stack([m.ravel() for m in mesh], axis=-1)  # (K, N)
+
+                ############# Experimental ################
+                vecs = V[None,:,:] + shifts[:,None,:] # (2^N, K, N)
+                vecs = vecs[np.isclose(np.einsum('ilj,k,jk->il', vecs, a[i], gram_matrix), 0)]
+                vecs_int = vecs*self.multiplicity[i]
+                vecs = vecs[np.all(np.isclose(vecs_int, np.round(vecs_int)), axis=1)]
+                if len(vecs)==0:
+                    if stop==1: # Sanity check
+                        raise RuntimeError("Already found the vectors in a smaller bounding box. "+
+                                           "So it cannot happen that no vectors exist in the bigger "+
+                                           "bounding box.. Bug alert!!!") 
+                    else:                   
+                        continue
+                else:
+                    stop = stop+1
+            vecs_lengths = np.einsum('ij,ik,jk->i', vecs, vecs, gram_matrix)
+            vecs = vecs[np.nonzero(np.isclose(vecs_lengths, np.min(vecs_lengths)))[0]]
+            vecs_int = vecs + a[i]
+            if np.allclose(vecs_int, np.round(vecs_int)):
+                vecs_int = np.round(vecs_int).astype(int)
+                mask = ~np.all(vecs_int==0, axis=1)
+                vecs_int[mask] = (vecs_int[mask].T/np.gcd.reduce(vecs_int[mask], axis=1)).T 
+                _, vecs_inds = np.unique(vecs_int, return_index = True, axis=0)
+            else:
+                raise RuntimeError("The relative shift vectors when added to "+
+                                    "A/mul, A being the shortest lattice vector "+
+                                    "in the desired direction, then the sum must be "+
+                                    "an integer ---> which is not the case for "+
+                                    f"direction {self.directions[i]}. \n" +
+                                    "Please check for possible bug in the code!")
+            if self.basis_directions == 'primitive_vector':
+                self._shortest_relative_shift_vectors.append(vecs[vecs_inds])
+            elif self.basis_directions == 'global_orthonormal':
+                self._shortest_relative_shift_vectors.append(np.dot(vecs[vecs_inds],
+                                                                    self.primitive_vectors))
+
+
+
+                ###########################################
 
             # differences to all centers
-            dif = V[None, :, :] - centers[:, None, :]         # (P, K, N)
-            quad = np.einsum('pkn,nm,pkm->pk', dif, gram_matrix, dif)   # (P, K)
+            #dif = V[None, :, :] - centers[:, None, :]         # (P, K, N)
+            #quad = np.einsum('pkn,nm,pkm->pk', dif, gram_matrix, dif)   # (P, K)
             # Notice to compute quad there is no need to 
             # explicitly perform Cholesky decomposition of gram_matrix
 
             # check condition
-            mask = quad <= (r_vec[:, None] ** 2)              # (P, K)
-            j_idx, k_idx = np.nonzero(mask)
+            #mask = quad <= (r_vec[:, None] ** 2)              # (P, K)
+            #j_idx, k_idx = np.nonzero(mask)
 
-            if j_idx.size == 0:
-                raise RuntimeError('It is not possible to have no relative '+ 
-                                   'shift vector between two consecutive '+
-                                   'lattice plane when multiplicity is not 1. \n'+
-                                   'Please check for possible bug in the code!')
-            else:
-                vecs = V[k_idx] + shifts[j_idx]
-                vecs_lengths = np.linalg.norm(vecs, axis=1)
-                vecs = vecs[np.nonzero(np.isclose(vecs_lengths, np.min(vecs_lengths)))[0]]
-                vecs_int = vecs + (self.shortest_lattice_vectors[i]/self.multiplicity[i])
-                if np.allclose(vecs_int, np.round(vecs_int)):
-                    vecs_int = np.round(vecs_int).astype(int)
-                    mask = ~np.all(vecs_int==0, axis=1)
-                    vecs_int[mask] = (vecs_int[mask].T/np.gcd.reduce(vecs_int[mask], axis=1)).T 
-                    _, vecs_inds = np.unique(vecs_int, return_index = True, axis=0)
-                else:
-                    raise RuntimeError("The relative shift vectors when added to "+
-                                       "A/mul, A being the shortest lattice vector "+
-                                       "in the desired direction, then the sum must be "+
-                                       "an integer ---> which is not the case for "+
-                                       f"direction {self.directions[i]}. \n" +
-                                       "Please check for possible bug in the code!")
-                self._shortest_relative_shift_vectors.append(vecs[vecs_inds])
+            #if j_idx.size == 0:
+            #    raise RuntimeError('It is not possible to have no relative '+ 
+            #                       'shift vector between two consecutive '+
+            #                       'lattice plane when multiplicity is not 1. \n'+
+            #                       'Please check for possible bug in the code!')
+            #else:
+            #    vecs = V[k_idx] + shifts[j_idx]
+            #    vecs = vecs[np.isclose(np.einsum('ij,k,jk->i', vecs, a[i], gram_matrix), 0)]
+            #    print(vecs)
+            #    vecs_lengths = np.einsum('ij,ik,jk->i', vecs, vecs, gram_matrix)
+            #    vecs = vecs[np.nonzero(np.isclose(vecs_lengths, np.min(vecs_lengths)))[0]]
+            #    vecs_int = vecs + (self.shortest_lattice_vectors[i]/self.multiplicity[i])
+            #    if np.allclose(vecs_int, np.round(vecs_int)):
+            #        vecs_int = np.round(vecs_int).astype(int)
+            #        mask = ~np.all(vecs_int==0, axis=1)
+            #        vecs_int[mask] = (vecs_int[mask].T/np.gcd.reduce(vecs_int[mask], axis=1)).T 
+            #        _, vecs_inds = np.unique(vecs_int, return_index = True, axis=0)
+            #    else:
+            #        raise RuntimeError("The relative shift vectors when added to "+
+            #                           "A/mul, A being the shortest lattice vector "+
+            #                           "in the desired direction, then the sum must be "+
+            #                           "an integer ---> which is not the case for "+
+            #                           f"direction {self.directions[i]}. \n" +
+            #                           "Please check for possible bug in the code!")
+            #   self._shortest_relative_shift_vectors.append(vecs[vecs_inds])
 
         
     @property
@@ -522,18 +581,12 @@ class Direction:
         ## Gram matrix of primitive lattice vectors
         gram_matrix = np.dot(self.primitive_vectors, self.primitive_vectors.T)
 
-        ## Transform vector from primitive vector basis to orthonormal basis
-        def convert_primitive_to_orthonormal_basis(v):
-            return np.sum(v*self.primitive_vectors.T, axis=1)
-
-        ## Transform vector from orthonormal basis to primitive vector basis
-        def convert_orthonormal_to_primitive_basis(v):
-            return np.linalg.solve(self.primitive_vectors.T, v)
+        
 
         self._primitive_vectors_in_2d_sublattice = []
         self._3d_to_2d_transformation_matrices = []
 
-        for i in len(self.directions):
+        for i in range(len(self.directions)):
 
             ## Area of parallelogram enclosed by primitive vectors of 2d sublattice
             Area = (abs(np.linalg.det(self.primitive_vectors))/
@@ -559,14 +612,14 @@ class Direction:
             u_unit_orthonorm = u_orthonorm/np.linalg.norm(u_orthonorm)
 
             # Length of vector v1
-            s1 = np.sum(np.outer(v1)*gram_matrix)
+            s1 = np.sum(np.outer(v1, v1)*gram_matrix)
 
             # v2 generator
             def generate_v2(alpha):
                 v2_unit = ((np.cos(alpha)*v1_unit_orthonorm) + 
                            (np.sin(alpha)*np.cross(u_unit_orthonorm, v1_unit_orthonorm)))
                 # sanity check:
-                assert np.isclose(np.linalg.norm(v2_unit), 1), "v2_unit must be a unit vector, check code for bug!"
+                assert np.isclose(np.linalg.norm(v2_unit), 1), f"v2_unit must be a unit vector, instead it is {v2_unit}, check code for bug!"
                 v2_prim = convert_orthonormal_to_primitive_basis(v2_unit)
                 v2_prim_ints = shortest_collinear_vector_with_integer_components(v2_prim, 10)
                 return v2_unit, v2_prim_ints
@@ -574,7 +627,7 @@ class Direction:
             # Loss function
             def loss(alpha):
                 v2_prim_ints = generate_v2(alpha)[1]
-                s2 = np.sum(np.outer(v2_prim_ints)*gram_matrix)
+                s2 = np.sum(np.outer(v2_prim_ints, v2_prim_ints)*gram_matrix)
                 return abs(Area - s1 * s2 * np.sin(alpha))
 
             # -----------------------------
