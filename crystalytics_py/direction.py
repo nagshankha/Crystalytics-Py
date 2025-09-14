@@ -102,7 +102,12 @@ class Direction:
 
     ## Transform vector from orthonormal basis to primitive vector basis
     def convert_orthonormal_to_primitive_basis(self, v):
-        return np.linalg.solve(self.primitive_vectors.T, v)
+        if v.shape == (len(self.primitive_vectors),):
+            return np.linalg.solve(self.primitive_vectors.T, v)
+        elif len(v.shape)==2 and v.shape[1] == len(self.primitive_vectors):
+            return np.linalg.solve(self.primitive_vectors.T, self.directions.T).T
+        else:
+            raise ValueError("shape of input vector not appropriate")
 
     def compute(self, compute_list='all'):
         self._execute_pipeline()
@@ -140,7 +145,7 @@ class Direction:
         if self.basis_directions == 'global_orthonormal':
             # Expressing the components of the desired directions in terms of the primitive lattice vectors
             # This is saved in self._dir_primitive for debugging purposes
-            self._dir_primitive = np.linalg.solve(self.primitive_vectors.T, self.directions.T).T
+            self._dir_primitive = self.convert_orthonormal_to_primitive_basis(self.directions)
         else:
             self._dir_primitive = self.directions.copy()
 
@@ -167,8 +172,8 @@ class Direction:
                       f"{len(self.directions)} directions. \n Please check the self._cosine_deviations > 1e-6 for such directions")
 
         # lattice spacing(s) along desired direction(s)
-        self._lattice_spacings = np.linalg.norm(np.dot(self.primitive_vectors.T, 
-                                                       self._shortest_lattice_vectors.T), axis = 0)
+        self._lattice_spacings = np.linalg.norm(self.convert_primitive_to_orthonormal_basis(
+                                                            self._shortest_lattice_vectors.T), axis = 1)
 
 
     @property
