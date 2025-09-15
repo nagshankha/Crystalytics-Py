@@ -182,7 +182,7 @@ def reduce_and_transform_lattice_vecs(B, method="auto", search_radius=4):
         raise ValueError("Unknown method")
 
     # orthonormal basis
-    Q = build_Q_from_B(B_reduced)
+    Q = build_Q_from_B(B_reduced) # (N,N)
 
     # intrinsic coords: project rows of B_reduced into new basis
     padded_coords = B_reduced @ Q    # (M,N)

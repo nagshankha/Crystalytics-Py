@@ -72,7 +72,7 @@ class CrystalStructure():
                 inputs of most of the methods of this class. 
    """
 
-   def __init__(self, primitive_vecs, motifs=None):
+   def __init__(self, primitive_vecs, motifs=None, motif_types=None):
       """
       Constructor:
 
@@ -82,7 +82,48 @@ class CrystalStructure():
       """
       self._primitive_vecs = primitive_vecs
       self._motifs = motifs
+      self._motif_types = motif_types
+
+
+   def find_lattice_points_in_superlattice(self, 
+                                           superlattice_generator_vectors,
+                                           reference_basis = "global_orthonormal"):
+
+      from .direction import Direction
+
+      if len(superlattice_generator_vectors) != len(self._primitive_vecs):
+         raise ValueError("Number of superlattice generator vectors must be "+
+                          f"{len(self._primitive_vecs)}")
+
+      D = Direction(self, superlattice_generator_vectors,
+                    basis_directions=reference_basis)
+      D._compute_lattice_spacing()
+
+      gram_matrix = np.dot(self._primitive_vecs, 
+                           self._primitive_vecs.T)
+
+      if np.isclose(np.linalg.det(D.convert_primitive_to_orthonormal_basis(
+                                    D.shortest_lattice_vectors)), 0.0):
+         raise ValueError("The superlattice generator vectors are not "+
+                          "linearly independent")
       
+      M = abs(np.linalg.det(D.shortest_lattice_vectors))
+
+      if M >=1 and np.isclose(M, np.round(M)):
+         M = int(M)
+      else:
+         raise RuntimeError("The number of lattice points in the superlattice must "+
+                            f"be an integer more than or equal to 1. But M = {M}. "+
+                            "Bug Alert !!!")
+      
+      ranges = [np.arange(0, M)]*len(self._primitive_vecs)
+      mesh = np.meshgrid(*ranges, indexing="ij")
+      V = np.stack([m.ravel() for m in mesh], axis=-1)  # (M^2, N)
+
+      W = np.dot(D.shortest_lattice_vectors.T, V.T).T/M
+      W = W[np.all(np.isclose(W, np.round(W)), axis=1)]
+
+      return W
 
    ############################################################
 
@@ -1007,11 +1048,14 @@ class CrystalStructure():
                                 'motifs are {0}'.format(self._motifs))
                   return
                else:
-                  return     
+                  return
+
+      elif name == "_motif_types":
+         self.__dict__[name] = value     
 
       else:
          raise NameError('class CrystalStructure: "' + name + '" is not a member of the this class. It must be ' +
-                         'either "_primitive_vecs" or "_motifs".')
+                         'either "_primitive_vecs" or "_motifs" or "_motif_types".')
 
    ############################################################
 

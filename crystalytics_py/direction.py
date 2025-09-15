@@ -571,22 +571,16 @@ class Direction:
         Disclaimer: This function is ONLY applicable to 3D lattices.
         """
 
-        from scipy.optimize import minimize_scalar
+        from scipy import optimize
 
         if len(self.primitive_vectors) != 3:
             raise ValueError(
                 f"This function is only applicable to 3D lattices, "
                 f"but got {len(self.primitive_vectors)} primitive vectors."
-            )
-
-        # self.shortest_relative_shift_vectors*mul are lattice vectors in the 
-        # 2d sublattice. Since they are all of the same length, let's choose 
-        # the first one as a primitive vector for the 2D sublattice
+            )        
 
         ## Gram matrix of primitive lattice vectors
-        gram_matrix = np.dot(self.primitive_vectors, self.primitive_vectors.T)
-
-        
+        gram_matrix = np.dot(self.primitive_vectors, self.primitive_vectors.T)        
 
         self._primitive_vectors_in_2d_sublattice = []
         self._3d_to_2d_transformation_matrices = []
@@ -595,13 +589,22 @@ class Direction:
 
             ## Area of parallelogram enclosed by primitive vectors of 2d sublattice
             Area = (abs(np.linalg.det(self.primitive_vectors))/
-                        self.lattice_interplanar_spacings[i])
+                        self.lattice_interplanar_spacings[i]) 
+            print(f"Area = {Area}")          
 
-            v1 = self.shortest_relative_shift_vectors[i][0]*self.multiplicity[i]
+            # shortest_relative_shift_vectors*mul are lattice vectors in the 
+            # 2d sublattice. Since they are all of the same length, let's choose 
+            # the first one as a primitive vector for the 2D sublattice
+            if self.basis_directions == "global_orthonormal":
+                v1 = ( self.convert_orthonormal_to_primitive_basis(
+                            self.shortest_relative_shift_vectors[i][0]) * 
+                        self.multiplicity[i] )
+            elif self.basis_directions == "primitive_vector":
+                v1 = self.shortest_relative_shift_vectors[i][0]*self.multiplicity[i]
 
             # sanity check
             if np.allclose(v1, np.round(v1)):
-                v1_orthonorm = convert_primitive_to_orthonormal_basis(v1)
+                v1_orthonorm = self.convert_primitive_to_orthonormal_basis(v1)
                 v1_unit_orthonorm = v1_orthonorm/np.linalg.norm(v1_orthonorm)
             else:
                 raise RuntimeError("shortest relative shift vectors multiplied "+
@@ -612,55 +615,85 @@ class Direction:
                                    "Please check for possible bug in the code!")
 
             # The desired direction in orthonormal coordinates
-            u_orthonorm = convert_primitive_to_orthonormal_basis(
+            u_orthonorm = self.convert_primitive_to_orthonormal_basis(
                                     self.shortest_lattice_vectors[i])
             u_unit_orthonorm = u_orthonorm/np.linalg.norm(u_orthonorm)
 
             # Length of vector v1
             s1 = np.sum(np.outer(v1, v1)*gram_matrix)
+            print(f"s1 = {s1}")
+
+            print(f"v1_unit_orthonorm = {v1_unit_orthonorm}")
+            print(f"u_unit_orthonorm = {u_unit_orthonorm}")
 
             # v2 generator
-            def generate_v2(alpha):
+            def generate_v2_single_alpha(alpha):
                 v2_unit = ((np.cos(alpha)*v1_unit_orthonorm) + 
                            (np.sin(alpha)*np.cross(u_unit_orthonorm, v1_unit_orthonorm)))
                 # sanity check:
                 assert np.isclose(np.linalg.norm(v2_unit), 1), f"v2_unit must be a unit vector, instead it is {v2_unit}, check code for bug!"
-                v2_prim = convert_orthonormal_to_primitive_basis(v2_unit)
-                v2_prim_ints = shortest_collinear_vector_with_integer_components(v2_prim, 10)
+                v2_prim = self.convert_orthonormal_to_primitive_basis(v2_unit)
+                v2_prim_ints = shortest_collinear_vector_with_integer_components(v2_prim, 10)[0][0]
+                return v2_unit, v2_prim_ints
+            
+            def generate_v2_multi_alpha(alpha):
+                v2_unit = ((np.cos(alpha)[:,None]*v1_unit_orthonorm) + 
+                           (np.sin(alpha)[:,None]*np.cross(u_unit_orthonorm, v1_unit_orthonorm)))
+                # sanity check:
+                assert np.allclose(np.linalg.norm(v2_unit, axis=1), 1), f"v2_unit must be a unit vector, instead it is {v2_unit}, check code for bug!"
+                v2_prim = self.convert_orthonormal_to_primitive_basis(v2_unit)
+                v2_prim_ints = shortest_collinear_vector_with_integer_components(v2_prim, 10)[0]
                 return v2_unit, v2_prim_ints
 
             # Loss function
-            def loss(alpha):
-                v2_prim_ints = generate_v2(alpha)[1]
+            def loss_single_alpha(alpha):
+                v2_prim_ints = generate_v2_single_alpha(alpha)[1]
                 s2 = np.sum(np.outer(v2_prim_ints, v2_prim_ints)*gram_matrix)
-                return abs(Area - s1 * s2 * np.sin(alpha))
+                return abs(Area - (s1 * s2 * np.sin(alpha)))
+            
+            def loss_multi_alpha(alpha):
+                v2_prim_ints = generate_v2_multi_alpha(alpha)[1]
+                s2 = np.einsum('ij,ik,jk->i', v2_prim_ints, v2_prim_ints, gram_matrix)
+                return abs(Area - (s1 * s2 * np.sin(alpha)))
 
             # -----------------------------
             # Local optimization
             # -----------------------------
-            res = minimize_scalar(
-                loss,
-                bounds=(1e-6, np.pi/2 + 1e-3),
-                method="bounded",
-                options={"xatol": 1e-6}
+
+            # Coarse screening
+            alpha_list = np.linspace(-1e-6, np.pi/2 + 1e-3, 100)
+            loss_list = loss_multi_alpha(alpha_list)
+            best_alpha = alpha_list[np.argmin(loss_list)]
+            best_loss = loss_list[np.argmin(loss_list)]
+            print(best_alpha); print(best_loss)
+            print(generate_v2_single_alpha(best_alpha))
+
+            res = optimize.minimize(
+                loss_single_alpha,
+                x0=best_alpha,
+                method='Nelder-Mead', 
+                tol=1e-6
             )
 
             best_alpha = res.x
             best_loss = res.fun
+            print(best_alpha); print(best_loss)
 
-            v2_unit, v2_prim_ints = generate_v2(best_alpha)
-            v2_orthonorm = convert_primitive_to_orthonormal_basis(v2_prim_ints)
+            v2_unit, v2_prim_ints = generate_v2_single_alpha(best_alpha)
+            print(v2_unit); print(v2_prim_ints)
+            v2_orthonorm = self.convert_primitive_to_orthonormal_basis(v2_prim_ints)
             v2_unit_orthonorm = v2_orthonorm/np.linalg.norm(v2_orthonorm)
             if np.isclose(best_loss, 0) and np.allclose(v2_unit, v2_unit_orthonorm):
                 v2 = v2_prim_ints
             else:
                 raise RuntimeError("Failed to find a primitive vector couple to v1")
 
-            B = np.array([convert_primitive_to_orthonormal_basis(v1),
-                          convert_primitive_to_orthonormal_basis(v2)])
+            B = np.array([v1_orthonorm, v2_orthonorm])
 
             from lattice_utils import reduce_and_transform_lattice_vecs
             _, B_coords, Q, _ = reduce_and_transform_lattice_vecs(B)
+
+            # B_coords: (2,2) Q: (3,3)
 
             self._primitive_vectors_in_2d_sublattice.append(B_coords)
             self._3d_to_2d_transformation_matrices.append(Q)
@@ -739,10 +772,12 @@ class Direction:
                 if value not in ("global_orthonormal", "primitive_vector"):
                     raise ValueError(f"Invalid basis_directions: {value} "+"\n"+
                                      "Allowed values are 'global_orthonormal' or 'primitive_vector'")
-                elif hasattr(self, "directions") and np.issubdtype(self._directions.dtype, np.floating):
+                elif hasattr(self, "_directions") and np.issubdtype(self._directions.dtype, np.floating):
                     if value == "primitive_vector":
                         raise ValueError("basis_directions cannot be 'primitive_vector' when " +
                                          "directions is an array of floats")
+                    else:
+                        self.__dict__[name] = value
                 else:
                     self.__dict__[name] = value
 
