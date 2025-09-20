@@ -84,18 +84,30 @@ class CrystalStructure():
       self._motifs = motifs
       self._motif_types = motif_types
 
+   @property
+   def primitive_vectors(self):
+      return self._primitive_vecs
+    
+   @property
+   def motifs(self):
+      return self._motifs
+   
+   @property
+   def motif_types(self):
+      return self._motif_types
+
 
    def find_lattice_points_in_superlattice(self, 
-                                           superlattice_generator_vectors,
+                                           superlattice_generator_vector_directions,
                                            reference_basis = "global_orthonormal"):
 
       from .direction import Direction
 
-      if len(superlattice_generator_vectors) != len(self._primitive_vecs):
+      if len(superlattice_generator_vector_directions) != len(self._primitive_vecs):
          raise ValueError("Number of superlattice generator vectors must be "+
                           f"{len(self._primitive_vecs)}")
 
-      D = Direction(self, superlattice_generator_vectors,
+      D = Direction(self, superlattice_generator_vector_directions,
                     basis_directions=reference_basis)
       D._compute_lattice_spacing()
 
@@ -123,7 +135,29 @@ class CrystalStructure():
       W = np.dot(D.shortest_lattice_vectors.T, V.T).T/M
       W = W[np.all(np.isclose(W, np.round(W)), axis=1)]
 
-      return W
+      return W, D.shortest_lattice_vectors
+   
+   def get_superlattice_crystal_structure(self, 
+                                          superlattice_generator_vector_directions,
+                                          reference_basis = "global_orthonormal"):
+      
+      W, superlattice_generator_vectors = self.find_lattice_points_in_superlattice(
+                                          superlattice_generator_vector_directions,
+                                          reference_basis=reference_basis)
+      superlattice_generator_vectors = np.dot(superlattice_generator_vectors, 
+                                              self._primitive_vecs)
+      
+      new_motifs = W[:, None, :] + self._motifs[None, :, :]
+      new_motifs = new_motifs.transpose(1, 0, 2).reshape(-1, W.shape[1])
+      new_motifs = np.dot(new_motifs, self._primitive_vecs)
+      new_motifs = np.dot(np.linalg.inv(superlattice_generator_vectors.T), 
+                          new_motifs.T).T
+      self._motif_types
+      new_motif_types = np.repeat(self._motif_types, len(W)).tolist()
+
+      return CrystalStructure(superlattice_generator_vectors,
+                              new_motifs,
+                              new_motif_types)
 
    ############################################################
 
