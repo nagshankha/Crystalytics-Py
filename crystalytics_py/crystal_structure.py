@@ -152,7 +152,8 @@ class CrystalStructure():
       new_motifs = np.dot(new_motifs, self._primitive_vecs)
       new_motifs = np.dot(np.linalg.inv(superlattice_generator_vectors.T), 
                           new_motifs.T).T
-      self._motif_types
+      new_motifs[np.isclose(new_motifs, 0.0)] = 0.0
+      new_motifs[new_motifs<0] += 1.
       new_motif_types = np.repeat(self._motif_types, len(W)).tolist()
 
       return CrystalStructure(superlattice_generator_vectors,
