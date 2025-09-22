@@ -150,7 +150,6 @@ class CrystalStructure():
       new_motifs[np.isclose(new_motifs, 1.0)] = 0.0
       new_motifs[new_motifs<0] += 1.
       new_motifs[new_motifs>1] -= 1.
-      print(new_motifs)
       new_motif_types = np.repeat(self._motifs["type"], len(W)).tolist()
 
       return CrystalStructure(superlattice_generator_vectors,
