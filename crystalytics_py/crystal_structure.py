@@ -150,8 +150,7 @@ class CrystalStructure():
       new_motifs = W[:, None, :] + self._motifs[None, :, :]
       new_motifs = new_motifs.transpose(1, 0, 2).reshape(-1, W.shape[1])
       new_motifs = np.dot(new_motifs, self._primitive_vecs)
-      new_motifs = np.dot(np.linalg.inv(superlattice_generator_vectors.T), 
-                          new_motifs.T).T
+      new_motifs = np.linalg.solve(superlattice_generator_vectors.T, new_motifs.T).T
       new_motifs[np.isclose(new_motifs, 0.0)] = 0.0
       new_motifs[np.isclose(new_motifs, 1.0)] = 0.0
       new_motifs[new_motifs<0] += 1.
