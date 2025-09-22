@@ -72,7 +72,7 @@ class CrystalStructure():
                 inputs of most of the methods of this class. 
    """
 
-   def __init__(self, primitive_vecs, motifs=None, motif_types=None):
+   def __init__(self, primitive_vecs, motif_positions=None, motif_types=None):
       """
       Constructor:
 
@@ -81,9 +81,8 @@ class CrystalStructure():
       primitive lattice vectors.
       """
       self._primitive_vecs = primitive_vecs
-      self._motifs = motifs
-      self._motif_types = motif_types
-
+      self._motifs = (motif_positions, motif_types)
+      
    @property
    def primitive_vectors(self):
       return self._primitive_vecs
@@ -91,10 +90,6 @@ class CrystalStructure():
    @property
    def motifs(self):
       return self._motifs
-   
-   @property
-   def motif_types(self):
-      return self._motif_types
 
 
    def find_lattice_points_in_superlattice(self, 
@@ -147,7 +142,7 @@ class CrystalStructure():
       superlattice_generator_vectors = np.dot(superlattice_generator_vectors, 
                                               self._primitive_vecs)
       
-      new_motifs = W[:, None, :] + self._motifs[None, :, :]
+      new_motifs = W[:, None, :] + self._motifs["pos"][None, :, :]
       new_motifs = new_motifs.transpose(1, 0, 2).reshape(-1, W.shape[1])
       new_motifs = np.dot(new_motifs, self._primitive_vecs)
       new_motifs = np.linalg.solve(superlattice_generator_vectors.T, new_motifs.T).T
@@ -155,7 +150,8 @@ class CrystalStructure():
       new_motifs[np.isclose(new_motifs, 1.0)] = 0.0
       new_motifs[new_motifs<0] += 1.
       new_motifs[new_motifs>1] -= 1.
-      new_motif_types = np.repeat(self._motif_types, len(W)).tolist()
+      print(new_motifs)
+      new_motif_types = np.repeat(self._motifs["type"], len(W)).tolist()
 
       return CrystalStructure(superlattice_generator_vectors,
                               new_motifs,
@@ -1057,41 +1053,58 @@ class CrystalStructure():
                self.__dict__[name] = value	 
 
       elif (name == '_motifs'):
-         if value is None:
-            self.__dict__[name] = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
-            return
-         elif not isinstance(value, np.ndarray):
-            raise TypeError('class CrystalStructure: The member "_motifs" must be a numpy ndarray or None')
+         positions, types = value
+         if positions is None:
+            positions = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
+         elif not isinstance(positions, np.ndarray):
+            raise TypeError('class CrystalStructure: motif positions must be a numpy ndarray or None')
          else:
-            if not np.all(inrange(value, 0, 1, ('closed', 'open'))):
+            if not np.all(inrange(positions, 0, 1, ('closed', 'open'))):
                raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1)')
-            elif (len(np.shape(value)) == 1) or ((len(np.shape(value)) == 2) and (np.shape(value)[0] == 1)): 
-               self.__dict__[name] = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
-               return
-            elif (len(np.shape(value)) == 2) and (np.shape(value)[1] != np.shape(self._primitive_vecs)[0]):
-               raise ValueError('class CrystalStructure: Dimension of primitive vectors and motifs does not match')
-            elif value.dtype != float:
-               raise TypeError('The member "_motifs" must be of dtype float')
-            else:
-               # so that no two or more motifs sit on each other
-               value = np.unique(np.round(value,decimals=8), axis=0) # And we expect the difference in fractional 
-                                                                     # coordinates is > 1e-8
-               self.__dict__[name] = value
-               if not all(np.isclose(value[0], 0.0)):
-                  self.originShift4Motifs()
-                  warnings.warn('The first motif was not at origin. So the motifs are translated '+
-                                'so as to have the first motif at origin. The resulting set of '+
-                                'motifs are {0}'.format(self._motifs))
-                  return
-               else:
-                  return
+            elif (len(np.shape(positions)) == 1) or ((len(np.shape(positions)) == 2) and (np.shape(positions)[0] == 1)): 
+               positions = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
+            elif (len(np.shape(positions)) == 2) and (np.shape(positions)[1] != np.shape(self._primitive_vecs)[0]):
+               raise ValueError('class CrystalStructure: Dimension of primitive vectors and motif positions does not match')
+            elif positions.dtype != float:
+               raise TypeError('motif positions must be of dtype float')
+            else:              
+               if not np.allclose(positions[0], 0.0):
+                  # The first motif was not at origin. So the motifs are translated
+                  # so as to have the first motif at origin
+                  positions -= positions[0]
+                  positions[positions<(-2*np.finfo(float).eps)] += 1   
 
-      elif name == "_motif_types":
-         self.__dict__[name] = value     
-
+         if types is None:
+            types = np.ones(np.shape(self._primitive_vecs)[0], dtype=int)
+            dtype = np.dtype([ ("pos", float, (self._primitive_vecs.shape[1],)),
+                               ("type", int)
+                             ])
+         elif not isinstance(types, (list, tuple, np.ndarray)):
+            raise TypeError('class CrystalStructure: motif type must be a list or tuple or numpy ndarray or None')
+         elif len(types) != len(positions):
+            raise ValueError('class CrystalStructure: there must be as many motif types as many are motif positions')
+         elif all([isinstance(x, (int, np.integer)) for x in types]):
+            dtype = np.dtype([ ("pos", float, (self._primitive_vecs.shape[1],)),
+                               ("type", int)
+                             ])
+         elif all([isinstance(x, (str, np.str_)) for x in types]):
+            dtype = np.dtype([ ("pos", float, (self._primitive_vecs.shape[1],)),
+                               ("type", "U10")
+                             ])
+         else:
+            raise ValueError('class CrystalStructure: motif types must be integers or strings')
+         
+         # so that no two or more motifs sit on each other
+         motifs = np.array(list(zip(positions, types)), dtype=dtype)
+         motifs["pos"] = np.round(motifs["pos"], decimals=8)
+         motifs = np.unique(motifs) # We expect the difference in fractional 
+                                    # coordinates is > 1e-8
+         
+         self.__dict__[name] = motifs
+                  
       else:
          raise NameError('class CrystalStructure: "' + name + '" is not a member of the this class. It must be ' +
-                         'either "_primitive_vecs" or "_motifs" or "_motif_types".')
+                         'either "_primitive_vecs" or "_motifs".')
 
    ############################################################
 
