@@ -82,7 +82,7 @@ def inrange(vec, mini, maxi, bounds=('open', 'open')):
    if not isinstance(vec, np.ndarray):
       vec = np.array(vec)
       
-   if (vec.dtype != int) and (vec.dtype != float):
+   if not (np.issubdtype(vec.dtype, np.integer) or np.issubdtype(vec.dtype, np.floating)):
       raise TypeError('Input must be either of type integers or floats')
 
    if not np.isnan(mini):

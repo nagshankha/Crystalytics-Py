@@ -268,7 +268,7 @@ class Direction:
         inds_nonnan_I = np.nonzero(~np.isnan(I_arr))
         row_inds, counts_nonnan_I = np.unique(inds_nonnan_I[0], return_counts=True)
         # Sanity check
-        if row_inds != np.arange(len(self.directions)):
+        if not np.all(row_inds == np.arange(len(self.directions))):
             raise RuntimeError(f"No direction can have all {self.primitive_vectors.shape[1]} "+
                                 "values of I as zero. There must be a bug in the code. Please check!")
         I = I_arr[(row_inds, inds_nonnan_I[1][np.r_[0, np.cumsum(counts_nonnan_I)[:-1]]])]
@@ -308,7 +308,33 @@ class Direction:
             raise RuntimeError("multiplicity for the requested directions have not been computed yet. \n"+
                                "Please run the compute() method first with "+
                                "lattice_interplanar_spacing in the compute_list.")
+        
+    def _compute_motif_plane_locations(self):
 
+        """
+        This method calculates the projection distances of motifs along the requested 
+        direction(s).
+        """
+        directions_orthonormal = self.convert_primitive_to_orthonormal_basis(
+                                                        self.shortest_lattice_vectors)
+        directions_unit_orthonormal = (directions_orthonormal.T/
+                                       np.linalg.norm(directions_orthonormal, axis=1)).T
+        motifs_orthonormal = self.convert_primitive_to_orthonormal_basis(self.motifs["pos"])
+        projections = np.dot(directions_unit_orthonormal, motifs_orthonormal.T) # rows for directions and columns for motifs
+        projections = np.round(projections, decimals=8)
+        self._motif_plane_locations = []
+        for i in range(len(projections)):
+            proj = projections[i]
+            dist = self.lattice_interplanar_spacings[i]
+            if all(inrange(proj, -dist, dist)):
+                proj[proj<0] += dist
+            else:
+                # Sanity check
+                raise RuntimeError("Every motif projection must be bounded between the +/- lattice interplanar spacing. "+
+                                   f"However for direction {self.directions[i]}, this is not the case: "+
+                                   f"Projections: {proj}; lattice interplanar spacing: {dist}")
+            proj = np.round(proj, decimals=8)
+            self._motif_plane_locations.append(np.unique(proj)/dist) 
     
     def _compute_relative_shift_of_lattice_planes(self):
 
