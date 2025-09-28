@@ -1057,21 +1057,21 @@ class CrystalStructure():
             positions = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
          elif not isinstance(positions, np.ndarray):
             raise TypeError('class CrystalStructure: motif positions must be a numpy ndarray or None')
-         else:
+         elif (len(np.shape(positions)) == 1) or ((len(np.shape(positions)) == 2) and (np.shape(positions)[0] == 1)): 
+            positions = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
+         elif (len(np.shape(positions)) == 2) and (np.shape(positions)[1] != np.shape(self._primitive_vecs)[0]):
+            raise ValueError('class CrystalStructure: Dimension of primitive vectors and motif positions does not match')           
+         elif positions.dtype != float:
+            raise TypeError('motif positions must be of dtype float')
+         else:  
+            positions[np.isclose(positions, 0.0)] = 0.0  
             if not np.all(inrange(positions, 0, 1, ('closed', 'open'))):
-               raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1)')
-            elif (len(np.shape(positions)) == 1) or ((len(np.shape(positions)) == 2) and (np.shape(positions)[0] == 1)): 
-               positions = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
-            elif (len(np.shape(positions)) == 2) and (np.shape(positions)[1] != np.shape(self._primitive_vecs)[0]):
-               raise ValueError('class CrystalStructure: Dimension of primitive vectors and motif positions does not match')
-            elif positions.dtype != float:
-               raise TypeError('motif positions must be of dtype float')
-            else:              
-               if not np.allclose(positions[0], 0.0):
-                  # The first motif was not at origin. So the motifs are translated
-                  # so as to have the first motif at origin
-                  positions -= positions[0]
-                  positions[positions<(-2*np.finfo(float).eps)] += 1   
+               raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1)')           
+            if not np.allclose(positions[0], 0.0):
+               # The first motif was not at origin. So the motifs are translated
+               # so as to have the first motif at origin
+               positions -= positions[0]
+               positions[positions<(-2*np.finfo(float).eps)] += 1   
 
          if types is None:
             types = np.ones(np.shape(self._primitive_vecs)[0], dtype=int)
