@@ -1066,7 +1066,8 @@ class CrystalStructure():
          else:  
             positions[np.isclose(positions, 0.0)] = 0.0  
             if not np.all(inrange(positions, 0, 1, ('closed', 'open'))):
-               raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1)')           
+               raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1). \n'+
+                               f"Entered motif values: \n {positions}")           
             if not np.allclose(positions[0], 0.0):
                # The first motif was not at origin. So the motifs are translated
                # so as to have the first motif at origin
