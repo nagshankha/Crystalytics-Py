@@ -1065,14 +1065,10 @@ class CrystalStructure():
             raise TypeError('motif positions must be of dtype float')
          else:  
             positions[np.isclose(positions, 0.0)] = 0.0  
-            if not np.all(inrange(positions, 0, 1, ('closed', 'open'))):
-               raise ValueError('class CrystalStructure: All fractional coordinates of every motif must be in range [0, 1). \n'+
-                               f"Entered motif values: \n {positions}")           
-            if not np.allclose(positions[0], 0.0):
-               # The first motif was not at origin. So the motifs are translated
-               # so as to have the first motif at origin
-               positions -= positions[0]
-               positions[positions<(-2*np.finfo(float).eps)] += 1   
+            # All the motifs are translated so as to have the first motif at origin
+            positions -= positions[0]
+            # To have all the motif positions in fractions coordinates in the range [0, 1)
+            positions -= np.floor(positions)   
 
          if types is None:
             types = np.ones(np.shape(self._primitive_vecs)[0], dtype=int)
