@@ -2,7 +2,7 @@ from .crystal_structure import CrystalStructure
 import numpy as np
 from .utils import *
 
-class Direction:
+class LatticeDirection:
 
     """
     Represents a set of directions in a crystal lattice and provides methods to compute
@@ -39,6 +39,8 @@ class Direction:
 
     # Maximum allowed length for searching shortest lattice vectors
     _max_lattice_vector_length = 50
+    _commensurability_rtol = 1e-5
+    _commensurability_atol = 1e-8
     
     def __init__(self, crystal_structure, directions,
                  basis_directions = 'global_orthonormal',
@@ -116,6 +118,74 @@ class Direction:
         for element in self._compute_pipeline:
             self.__dict__["_compute_"+element]()
 
+    @classmethod
+    def _integer_proportionality(cls, vectors, integer_vectors):
+        """
+        Check row-by-row whether floating-point vectors are proportional
+        to corresponding integer vectors.
+
+        Returns
+        -------
+        scale_factors : ndarray, shape (N,)
+            Scale factor s such that integer_vector ~= s * vector.
+            NaN for non-proportional rows.
+
+        is_proportional : ndarray, shape (N,)
+            True where the two vectors are proportional within tolerance.
+        """
+
+        vectors = np.asarray(vectors, dtype=float)
+        integer_vectors = np.asarray(integer_vectors, dtype=float)
+
+        nonzero = ~np.isclose(
+            vectors,
+            0.0,
+            atol=cls._commensurability_atol,
+        )
+
+        has_nonzero = np.any(nonzero, axis=1)
+
+        # Pick one nonzero component from each row.
+        # argmax returns the first True.
+        pivot = np.argmax(nonzero, axis=1)
+
+        rows = np.arange(len(vectors))
+
+        scale_factors = np.full(
+            len(vectors),
+            np.nan,
+            dtype=float,
+        )
+
+        valid_rows = has_nonzero
+
+        scale_factors[valid_rows] = (
+            integer_vectors[rows[valid_rows], pivot[valid_rows]]
+            / vectors[rows[valid_rows], pivot[valid_rows]]
+        )
+
+        reconstructed = (
+            vectors * scale_factors[:, None]
+        )
+
+        is_proportional = (
+            has_nonzero
+            & np.all(
+                np.isclose(
+                    integer_vectors,
+                    reconstructed,
+                    rtol=cls._commensurability_rtol,
+                    atol=cls._commensurability_atol,
+                ),
+                axis=1,
+            )
+        )
+
+        # Only expose a meaningful scale for truly proportional rows.
+        scale_factors[~is_proportional] = np.nan
+
+        return scale_factors, is_proportional
+
     def _compute_lattice_spacing(self):
 
         """
@@ -164,6 +234,13 @@ class Direction:
         self._shortest_lattice_vectors, self._cosine_deviations = \
             shortest_collinear_vector_with_integer_components(self._dir_primitive,
                                                               max_length=self._max_lattice_vector_length)
+
+        _, self._is_lattice_direction = (
+            self._integer_proportionality(
+                self._dir_primitive,
+                self._shortest_lattice_vectors,
+            )
+        )
         
         if self.verbose:
             if np.any(self._cosine_deviations > 1e-6):
@@ -194,7 +271,162 @@ class Direction:
                                "Please run the compute() method first with "+
                                "lattice_spacing in the compute_list.")
 
-    def _compute_lattice_interplanar_spacing(self):
+    @property
+    def is_lattice_direction(self):
+        if hasattr(self, "_is_lattice_direction"):
+            return self._is_lattice_direction
+
+        raise RuntimeError(
+            "lattice direction commensurability has not "
+            "been computed yet.\n"
+            "Please compute lattice spacing first."
+        )
+
+    @property
+    def lattice_direction_cosine_deviations(self):
+        if hasattr(self, "_cosine_deviations"):
+            return self._cosine_deviations
+
+        raise RuntimeError(
+            "lattice direction deviations have not "
+            "been computed yet.\n"
+            "Please compute lattice spacing first."
+        )
+
+    def _compute_plane_commensurability(self):
+
+        if not hasattr(self, "_shortest_lattice_vectors"):
+            self._compute_lattice_spacing()
+
+        gram_matrix = np.dot(
+            self.primitive_vectors,
+            self.primitive_vectors.T,
+        )
+
+        # For direct-lattice coefficients u:
+        #
+        #     h ~ G u
+        #
+        # gives reciprocal coefficients of a plane
+        # whose Cartesian normal is parallel to u.
+        coeff = np.dot(
+            gram_matrix,
+            self.shortest_lattice_vectors.T,
+        ).T
+
+        candidate_indices, cosine_deviations = (
+            shortest_collinear_vector_with_integer_components(
+                coeff,
+                max_length=self._max_lattice_vector_length,
+            )
+        )
+
+        scale_factors, proportional = (
+            self._integer_proportionality(
+                coeff,
+                candidate_indices,
+            )
+        )
+
+        candidate_multiplicity = (
+            scale_factors
+            * self.lattice_spacings**2
+        )
+
+        integer_multiplicity = np.zeros(
+            len(self.directions),
+            dtype=bool,
+        )
+
+        integer_multiplicity[proportional] = np.isclose(
+            candidate_multiplicity[proportional],
+            np.rint(
+                candidate_multiplicity[proportional]
+            ),
+            rtol=self._commensurability_rtol,
+            atol=self._commensurability_atol,
+        )
+
+        self._candidate_normal_plane_indices = (
+            candidate_indices
+        )
+
+        self._normal_plane_cosine_deviations = (
+            cosine_deviations
+        )
+
+        self._normal_plane_scale_factors = (
+            scale_factors
+        )
+
+        self._candidate_multiplicity = (
+            candidate_multiplicity
+        )
+
+        self._is_plane_commensurate = (
+            proportional
+            & integer_multiplicity
+        )
+
+    @property
+    def is_plane_commensurate(self):
+
+        if not hasattr(
+            self,
+            "_is_plane_commensurate",
+        ):
+            self._compute_plane_commensurability()
+
+        return self._is_plane_commensurate
+
+    @property
+    def candidate_normal_plane_indices(self):
+
+        if not hasattr(
+            self,
+            "_candidate_normal_plane_indices",
+        ):
+            self._compute_plane_commensurability()
+
+        return self._candidate_normal_plane_indices
+
+    @property
+    def normal_plane_cosine_deviations(self):
+
+        if not hasattr(
+            self,
+            "_normal_plane_cosine_deviations",
+        ):
+            self._compute_plane_commensurability()
+
+        return self._normal_plane_cosine_deviations
+
+    @property
+    def normal_plane_indices(self):
+
+        if not hasattr(
+            self,
+            "_is_plane_commensurate",
+        ):
+            self._compute_plane_commensurability()
+
+        if not np.all(
+            self._is_plane_commensurate
+        ):
+            incompatible = self.directions[
+                ~self._is_plane_commensurate
+            ]
+
+            raise RuntimeError(
+                "normal_plane_indices are defined only "
+                "for plane-commensurate directions. "
+                "Incompatible requested directions:\n"
+                f"{incompatible}"
+            )
+
+        return self._candidate_normal_plane_indices
+
+    def _compute_lattice_interplanar_spacing_depreciated(self):
 
         """
         Calculates the lattice interplanar spacing along each requested direction. 
@@ -290,6 +522,36 @@ class Direction:
 
         self._lattice_interplanar_spacings = self.lattice_spacings/self._multiplicity
 
+
+    def _compute_lattice_interplanar_spacing(self):
+
+        self._compute_plane_commensurability()
+
+        if not np.all(
+            self._is_plane_commensurate
+        ):
+            sel = ~self._is_plane_commensurate
+
+            raise RuntimeError(
+                "The following requested directions are "
+                "valid/approximated direct-lattice directions "
+                "but are not normal to a rational lattice-plane "
+                "family within the current numerical tolerance:\n"
+                f"{self.directions[sel]}\n"
+                "Candidate reciprocal integer indices:\n"
+                f"{self._candidate_normal_plane_indices[sel]}\n"
+                "Modified cosine deviations:\n"
+                f"{self._normal_plane_cosine_deviations[sel]}"
+            )
+
+        self._multiplicity = np.rint(
+            self._candidate_multiplicity
+        ).astype(int)
+
+        self._lattice_interplanar_spacings = (
+            self.lattice_spacings
+            / self._multiplicity
+        )
         
     @property
     def lattice_interplanar_spacings(self):
@@ -818,3 +1080,6 @@ class Direction:
                 self.__dict__[name] = value
 
 
+# Backward-compatible name retained during the transition
+# to the more precise public class name.
+Direction = LatticeDirection
