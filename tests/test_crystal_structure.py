@@ -18,13 +18,6 @@ def test_default_single_motif_is_at_origin():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known Stage-1 bug: default motif_types length "
-        "is based on dimension, not number of motifs."
-    ),
-)
 def test_default_motif_types_preserve_all_motifs():
 
     positions = np.array(

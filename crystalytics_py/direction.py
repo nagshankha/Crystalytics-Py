@@ -282,7 +282,7 @@ class Direction:
 
         multiplicity = I * self.lattice_spacings**2
         if np.allclose(multiplicity, np.round(multiplicity)):
-            self._multiplicity = multiplicity.astype(int)
+            self._multiplicity = np.rint(multiplicity).astype(int)
         else:
             sel = np.invert(np.isclose(multiplicity, np.round(multiplicity)))
             raise RuntimeError(f"For directions:\n {self.directions[sel]} \n"+

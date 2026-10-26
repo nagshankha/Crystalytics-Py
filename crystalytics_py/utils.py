@@ -71,7 +71,23 @@ def shortest_collinear_vector_with_integer_components(v, max_length=50):
        print(f"Warning: Optimization failed with message: \n"+res.message) 
     v_new = np.round(res.x*u.T).astype(int).T
     v_new = (v_new.T/np.gcd.reduce(v_new, axis=1)).T
-    return v_new.astype(int), 0.5*(1-np.sum(u*v_new, axis=1)/np.linalg.norm(v, axis=1)) 
+    #return v_new.astype(int), 0.5*(1-np.sum(u*v_new, axis=1)/np.linalg.norm(v, axis=1)) 
+
+    cos_theta = (
+        np.sum(u * v_new, axis=1)
+        / np.linalg.norm(v_new, axis=1)
+    )
+
+    cos_theta = np.clip(
+        cos_theta,
+        -1.0,
+        1.0,
+    )
+
+    return (
+        v_new.astype(int),
+        0.5 * (1.0 - cos_theta),
+    )
     
 
 def inrange(vec, mini, maxi, bounds=('open', 'open')):

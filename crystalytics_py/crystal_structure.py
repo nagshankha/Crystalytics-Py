@@ -1071,7 +1071,7 @@ class CrystalStructure():
             positions -= np.floor(positions)   
 
          if types is None:
-            types = np.ones(np.shape(self._primitive_vecs)[0], dtype=int)
+            types = np.ones(len(positions), dtype=int)
             dtype = np.dtype([ ("pos", float, (self._primitive_vecs.shape[1],)),
                                ("type", int)
                              ])

@@ -22,13 +22,6 @@ def test_integer_vector_is_reduced_to_coprime_components():
     assert deviation[0] == pytest.approx(0.0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known Stage-1 bug: floating-vector "
-        "cosine-deviation normalization is incorrect."
-    ),
-)
 def test_float_vector_exactly_collinear_has_zero_deviation():
 
     vector, deviation = (

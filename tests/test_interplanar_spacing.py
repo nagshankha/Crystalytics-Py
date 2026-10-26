@@ -30,13 +30,6 @@ def test_sc_interplanar_spacing_known_good(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known Stage-1 bug: multiplicity near 3 is "
-        "truncated instead of rounded."
-    ),
-)
 def test_sc_111_interplanar_spacing(
     sc,
     direction_with_planes_factory,
@@ -63,13 +56,6 @@ def test_fcc_110_interplanar_spacing(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known Stage-1 bug: FCC [111] multiplicity "
-        "is truncated from ~3 to 2."
-    ),
-)
 def test_fcc_111_interplanar_spacing(
     fcc,
     direction_with_planes_factory,
@@ -83,13 +69,6 @@ def test_fcc_111_interplanar_spacing(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known Stage-1 bug: FCC [121] multiplicity "
-        "is truncated from ~6 to 5."
-    ),
-)
 def test_fcc_121_interplanar_spacing(
     fcc,
     direction_with_planes_factory,
@@ -103,13 +82,6 @@ def test_fcc_121_interplanar_spacing(
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known Stage-1 bug: BCC [111] multiplicity "
-        "is truncated from ~3 to 2."
-    ),
-)
 def test_bcc_111_interplanar_spacing(
     bcc,
     direction_with_planes_factory,
@@ -139,3 +111,45 @@ def test_hexagonal_c_axis_plane_spacing(
     assert d.lattice_interplanar_spacings[0] == pytest.approx(
         expected_c
     )
+
+def test_fcc_111_relative_plane_shifts(
+    fcc,
+    direction_with_planes_factory,
+):
+    """
+    FCC (111) planes repeat with the three
+    Shockley-type registry shifts.
+    """
+
+    d = direction_with_planes_factory(
+        fcc,
+        [1, 1, 1],
+    )
+
+    d._compute_relative_shift_of_lattice_planes()
+
+    shifts = d.shortest_relative_shift_vectors[0]
+
+    expected = np.array(
+        [
+            [1.0, -2.0, 1.0],
+            [-2.0, 1.0, 1.0],
+            [1.0, 1.0, -2.0],
+        ]
+    ) / 6.0
+
+    assert len(shifts) == 3
+
+    # The three symmetry-equivalent shifts need not
+    # be returned in a particular ordering.
+    for expected_shift in expected:
+        assert np.any(
+            np.all(
+                np.isclose(
+                    shifts,
+                    expected_shift,
+                    atol=1e-12,
+                ),
+                axis=1,
+            )
+        )
