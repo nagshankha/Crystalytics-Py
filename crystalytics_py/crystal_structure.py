@@ -72,7 +72,8 @@ class CrystalStructure():
                 inputs of most of the methods of this class. 
    """
 
-   def __init__(self, primitive_vecs, motif_positions=None, motif_types=None):
+   def __init__(self, primitive_vecs, motif_positions=None, motif_types=None,
+                parent_crystal_structure=None):
       """
       Constructor:
 
@@ -82,6 +83,7 @@ class CrystalStructure():
       """
       self._primitive_vecs = primitive_vecs
       self._motifs = (motif_positions, motif_types)
+      self._parent_crystal_structure = parent_crystal_structure
       
    @property
    def primitive_vectors(self):
@@ -91,6 +93,338 @@ class CrystalStructure():
    def motifs(self):
       return self._motifs
 
+   @property
+   def parent_crystal_structure(self):
+      return self._parent_crystal_structure
+
+   @property
+   def parent_lattice_transform(self):
+      if self._parent_crystal_structure is None:
+         return None
+
+      transform = np.linalg.solve(
+         self._parent_crystal_structure.primitive_vectors.T,
+         self._primitive_vecs.T,
+      ).T
+
+      transform[np.isclose(transform, 0.0)] = 0.0
+
+      return transform
+
+   @property
+   def is_superlattice(self):
+      transform = self.parent_lattice_transform
+
+      if transform is None:
+         return False
+
+      return bool(
+         np.allclose(
+               transform,
+               np.rint(transform),
+         )
+      )
+
+   @property
+   def n_parent_lattice_points(self):
+      if not self.is_superlattice:
+         return None
+
+      transform = np.rint(
+         self.parent_lattice_transform
+      ).astype(int)
+
+      return int(
+         abs(round(np.linalg.det(transform)))
+      )
+
+   @property
+   def replication_plane_intervals(self):
+      """
+      Number of parent-lattice plane intervals spanning each cell vector.
+
+      For cell vector i, consider the pair of opposite cell faces
+      transverse to that vector. Let H_i be their perpendicular
+      separation and d_i the spacing of the primitive parent-lattice
+      planes parallel to those faces. This property returns
+
+         K_i = H_i / d_i.
+
+      K_i determines the admissible partial replication steps used by
+      ``replicate``:
+
+         0 <= p_i < K_i.
+
+      Thus K_i = 1 means that no non-zero partial replication is
+      possible along that cell vector.
+
+      Notes
+      -----
+      If no parent crystal is supplied, the current cell is provisionally
+      treated as primitive and K_i = 1 for every cell vector. This is a
+      temporary assumption until automatic primitive-parent identification
+      is implemented.
+      """
+
+      ndim = len(self._primitive_vecs)
+
+      if self._parent_crystal_structure is None:
+         return np.ones(ndim, dtype=int)
+
+      if not self.is_superlattice:
+         raise RuntimeError(
+               "replication_plane_intervals requires the current cell "
+               "to be an exact superlattice of parent_crystal_structure."
+         )
+
+      S = np.rint(
+         self.parent_lattice_transform
+      ).astype(int)
+
+      if ndim == 2:
+         cofactors = np.array(
+               [
+                  [ S[1, 1], -S[1, 0]],
+                  [-S[0, 1],  S[0, 0]],
+               ],
+               dtype=int,
+         )
+
+      elif ndim == 3:
+         cofactors = np.array(
+               [
+                  np.cross(S[1], S[2]),
+                  np.cross(S[2], S[0]),
+                  np.cross(S[0], S[1]),
+               ],
+               dtype=int,
+         )
+
+      else:
+         raise NotImplementedError(
+               "replication_plane_intervals currently "
+               "supports only 2D and 3D."
+         )
+
+      common_factors = np.gcd.reduce(
+         np.abs(cofactors),
+         axis=1,
+      )
+
+      primitive_normals = (
+         cofactors / common_factors[:, None]
+      ).astype(int)
+
+      intervals = np.abs(
+         np.einsum(
+               "ij,ij->i",
+               S,
+               primitive_normals,
+         )
+      ).astype(int)
+
+      return intervals
+
+   def replicate(
+    self,
+    repetitions,
+    partial_plane_steps=None,
+):
+    """
+    Generate full and/or partial replications of the current crystal cell.
+
+    Parameters
+    ----------
+    repetitions : array-like of int
+        Number of complete cell repetitions along each current cell
+        vector.
+
+    partial_plane_steps : array-like of int, optional
+        Additional partial replication along each cell vector,
+        expressed in parent-lattice plane-spacing increments.
+
+        Before specifying these values, inspect
+
+            crystal.replication_plane_intervals
+
+        If it returns K = [K_1, ..., K_D], each requested step must
+        satisfy
+
+            0 <= p_i < K_i.
+
+        The resulting scale factor along cell vector i is
+
+            repetitions[i] + p_i / K_i.
+
+        If omitted, all partial steps are zero.
+
+    Returns
+    -------
+    positions : ndarray
+        Cartesian atom positions.
+
+    atom_types : ndarray
+        Atom types corresponding to ``positions``.
+
+    cell_vectors : ndarray
+        Bounding vectors of the generated cell.
+
+    Raises
+    ------
+    ValueError
+        If repetition counts or partial steps are invalid.
+        Check ``crystal.replication_plane_intervals`` for the valid
+        bounds of ``partial_plane_steps``.
+
+    NotImplementedError
+        Replication currently supports only a single-site parent motif.
+        Multi-atom parent motifs will be supported later.
+    """
+
+    ndim = len(self._primitive_vecs)
+
+    repetitions = np.asarray(
+        repetitions,
+        dtype=int,
+    )
+
+    if repetitions.shape != (ndim,):
+        raise ValueError(
+            f"repetitions must contain exactly {ndim} values. "
+            f"Received shape {repetitions.shape}."
+        )
+
+    # Stage 3: replication is restricted to structures ultimately
+    # derived from a single-site parent lattice.
+    parent = (
+        self._parent_crystal_structure
+        if self._parent_crystal_structure is not None
+        else self
+    )
+
+    if len(parent.motifs) != 1:
+        raise NotImplementedError(
+            "Replication currently supports only a "
+            "single-site parent motif."
+        )
+
+    K = self.replication_plane_intervals
+
+    if partial_plane_steps is None:
+        partial_plane_steps = np.zeros(
+            ndim,
+            dtype=int,
+        )
+    else:
+        partial_plane_steps = np.asarray(
+            partial_plane_steps,
+            dtype=int,
+        )
+
+    if partial_plane_steps.shape != (ndim,):
+        raise ValueError(
+            f"partial_plane_steps must contain exactly {ndim} values. "
+            f"Received shape {partial_plane_steps.shape}."
+        )
+
+    invalid = (
+        (partial_plane_steps < 0)
+        | (partial_plane_steps >= K)
+    )
+
+    if np.any(invalid):
+        raise ValueError(
+            "Invalid partial_plane_steps. Each p_i must satisfy "
+            "0 <= p_i < K_i, where K_i is given by "
+            "crystal.replication_plane_intervals.\n"
+            f"replication_plane_intervals = {K}\n"
+            f"received partial_plane_steps = "
+            f"{partial_plane_steps}"
+        )
+
+    total_plane_intervals = (
+        repetitions * K
+        + partial_plane_steps
+    )
+
+    if np.any(total_plane_intervals <= 0):
+        raise ValueError(
+            "The generated cell must have positive extent "
+            "along every cell vector. Increase repetitions "
+            "and/or partial_plane_steps."
+        )
+
+    scale_factors = (
+        repetitions
+        + partial_plane_steps / K
+    )
+
+    cell_vectors = (
+        scale_factors[:, None]
+        * self._primitive_vecs
+    )
+
+    tile_counts = np.ceil(
+        scale_factors
+    ).astype(int)
+
+    ranges = [
+        np.arange(n)
+        for n in tile_counts
+    ]
+
+    mesh = np.meshgrid(
+        *ranges,
+        indexing="ij",
+    )
+
+    translations = np.stack(
+        [m.ravel() for m in mesh],
+        axis=-1,
+    )
+
+    fractional_positions = (
+        translations[:, None, :]
+        + self._motifs["pos"][None, :, :]
+    ).reshape(
+        -1,
+        ndim,
+    )
+
+    atom_types = np.tile(
+        self._motifs["type"],
+        len(translations),
+    )
+
+    upper_boundary = scale_factors[None, :]
+
+    inside = np.all(
+        (fractional_positions >= 0.0)
+        & (
+            fractional_positions
+            < upper_boundary
+        ),
+        axis=1,
+    )
+
+    fractional_positions = fractional_positions[
+        inside
+    ]
+
+    atom_types = atom_types[
+        inside
+    ]
+
+    positions = np.dot(
+        fractional_positions,
+        self._primitive_vecs,
+    )
+
+    return (
+        positions,
+        atom_types,
+        cell_vectors,
+    )
 
    def find_lattice_points_in_superlattice(self, 
                                            superlattice_generator_vector_directions,
@@ -154,7 +488,8 @@ class CrystalStructure():
 
       return CrystalStructure(superlattice_generator_vectors,
                               new_motifs,
-                              new_motif_types)
+                              new_motif_types,
+                              parent_crystal_structure=self)
 
    ############################################################
 
@@ -1097,10 +1432,19 @@ class CrystalStructure():
                                     # coordinates is > 1e-8
          
          self.__dict__[name] = motifs
+
+      elif name == "_parent_crystal_structure":
+         if value is not None and not isinstance(value, CrystalStructure):
+            raise TypeError(
+                  'class CrystalStructure: "parent_crystal_structure" '
+                  "must be a CrystalStructure instance or None"
+            )
+
+         self.__dict__[name] = value
                   
       else:
          raise NameError('class CrystalStructure: "' + name + '" is not a member of the this class. It must be ' +
-                         'either "_primitive_vecs" or "_motifs".')
+                         'either "_primitive_vecs" or "_motifs" or "_parent_crystal_structure".')
 
    ############################################################
 
