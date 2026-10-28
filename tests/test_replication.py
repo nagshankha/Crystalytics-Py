@@ -216,3 +216,275 @@ def test_multi_atom_parent_replication_is_deferred():
         crystal.replicate(
             repetitions=[2, 2, 2]
         )
+
+def _skew_sc_supercell(sc):
+    """
+    SC supercell with transformation
+
+        S = [[2, 1, 0],
+             [0, 1, 0],
+             [0, 0, 1]]
+
+    The cell is non-orthogonal and contains two parent lattice sites.
+    """
+    return sc.get_superlattice_crystal_structure(
+        np.array(
+            [
+                [2.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+    )
+
+def test_skew_sc_supercell_geometry(sc):
+    child = _skew_sc_supercell(sc)
+
+    expected_cell = np.array(
+        [
+            [2.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+    np.testing.assert_allclose(
+        child.primitive_vectors,
+        expected_cell,
+    )
+
+    assert child.is_superlattice
+    assert child.n_parent_lattice_points == 2
+
+    np.testing.assert_array_equal(
+        np.rint(
+            child.parent_lattice_transform
+        ).astype(int),
+        np.array(
+            [
+                [2, 1, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+            ]
+        ),
+    )
+
+def test_skew_sc_supercell_has_expected_lattice_sites(sc):
+    child = _skew_sc_supercell(sc)
+
+    expected_fractional = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [0.5, 0.5, 0.0],
+        ]
+    )
+
+    actual = child.motifs["pos"]
+
+    assert len(actual) == 2
+
+    for expected in expected_fractional:
+        assert np.any(
+            np.all(
+                np.isclose(
+                    actual,
+                    expected,
+                    atol=1e-12,
+                ),
+                axis=1,
+            )
+        )
+
+def test_skew_sc_replication_plane_intervals(sc):
+    child = _skew_sc_supercell(sc)
+
+    np.testing.assert_array_equal(
+        child.replication_plane_intervals,
+        [2, 2, 1],
+    )
+
+    # Independent geometrical verification.
+    a1, a2, a3 = child.primitive_vectors
+
+    n1 = np.cross(a2, a3)
+    n1 /= np.linalg.norm(n1)
+
+    H1 = abs(np.dot(a1, n1))
+    d1 = 1.0
+
+    assert H1 / d1 == pytest.approx(2.0)
+
+    n2 = np.cross(a3, a1)
+    n2 /= np.linalg.norm(n2)
+
+    H2 = abs(np.dot(a2, n2))
+    d2 = 1.0 / np.sqrt(5.0)
+
+    assert H2 / d2 == pytest.approx(2.0)
+
+    n3 = np.cross(a1, a2)
+    n3 /= np.linalg.norm(n3)
+
+    H3 = abs(np.dot(a3, n3))
+    d3 = 1.0
+
+    assert H3 / d3 == pytest.approx(1.0)
+
+def test_skew_sc_partial_replication_exact_positions(sc):
+    child = _skew_sc_supercell(sc)
+
+    positions, atom_types, cell = child.replicate(
+        repetitions=[1, 1, 1],
+        partial_plane_steps=[1, 0, 0],
+    )
+
+    expected_cell = np.array(
+        [
+            [3.0, 1.5, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+    np.testing.assert_allclose(
+        cell,
+        expected_cell,
+    )
+
+    expected_positions = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 1.0, 0.0],
+        ]
+    )
+
+    assert len(positions) == 3
+
+    for expected in expected_positions:
+        assert np.any(
+            np.all(
+                np.isclose(
+                    positions,
+                    expected,
+                    atol=1e-12,
+                ),
+                axis=1,
+            )
+        )
+
+def test_partial_step_adds_exactly_one_plane_spacing(sc):
+    child = _skew_sc_supercell(sc)
+
+    _, _, new_cell = child.replicate(
+        repetitions=[1, 1, 1],
+        partial_plane_steps=[1, 0, 0],
+    )
+
+    old_a1, old_a2, old_a3 = (
+        child.primitive_vectors
+    )
+
+    new_a1 = new_cell[0]
+
+    normal = np.cross(old_a2, old_a3)
+    normal /= np.linalg.norm(normal)
+
+    H_old = abs(
+        np.dot(old_a1, normal)
+    )
+
+    H_new = abs(
+        np.dot(new_a1, normal)
+    )
+
+    d = 1.0
+
+    assert H_new - H_old == pytest.approx(d)
+
+def test_skew_sc_full_replication_preserves_parent_lattice(sc):
+    child = _skew_sc_supercell(sc)
+
+    positions, atom_types, cell = child.replicate(
+        repetitions=[2, 3, 1]
+    )
+
+    expected_cell = np.array(
+        [
+            [4.0, 2.0, 0.0],
+            [0.0, 3.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+
+    np.testing.assert_allclose(
+        cell,
+        expected_cell,
+    )
+
+    assert len(positions) == 12
+
+    np.testing.assert_allclose(
+        positions,
+        np.rint(positions),
+        atol=1e-12,
+    )
+
+def _assert_no_periodic_duplicates(
+    positions,
+    cell,
+    atol=1e-10,
+):
+    fractional = np.linalg.solve(
+        cell.T,
+        positions.T,
+    ).T
+
+    wrapped = fractional % 1.0
+
+    for i in range(len(wrapped)):
+        for j in range(i + 1, len(wrapped)):
+            assert not np.allclose(
+                wrapped[i],
+                wrapped[j],
+                atol=atol,
+            )
+
+def test_replication_plane_intervals_are_metric_independent():
+    parent_vectors = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.3, 1.1, 0.0],
+            [0.2, 0.1, 0.9],
+        ]
+    )
+
+    parent = CrystalStructure(
+        parent_vectors
+    )
+
+    S = np.array(
+        [
+            [2, 1, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+        ]
+    )
+
+    child = CrystalStructure(
+        S @ parent_vectors,
+        motif_positions=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [0.5, 0.5, 0.0],
+            ]
+        ),
+        motif_types=[1, 1],
+        parent_crystal_structure=parent,
+    )
+
+    np.testing.assert_array_equal(
+        child.replication_plane_intervals,
+        [2, 2, 1],
+    )
+
