@@ -41,6 +41,32 @@ class LatticeDirection:
     _max_lattice_vector_length = 50
     _commensurability_rtol = 1e-5
     _commensurability_atol = 1e-8
+
+    # Computations currently supported by the public compute() pipeline.
+    _available_computations = (
+        "lattice_spacing",
+        "plane_commensurability",
+        "lattice_interplanar_spacing",
+        "motif_plane_locations",
+        "relative_shift_of_lattice_planes",
+    )
+
+    # Dependencies between computations.
+    _computation_dependencies = {
+        "lattice_spacing": (),
+        "plane_commensurability": (
+            "lattice_spacing",
+        ),
+        "lattice_interplanar_spacing": (
+            "plane_commensurability",
+        ),
+        "motif_plane_locations": (
+            "lattice_interplanar_spacing",
+        ),
+        "relative_shift_of_lattice_planes": (
+            "lattice_interplanar_spacing",
+        ),
+    }
     
     def __init__(self, crystal_structure, directions,
                  basis_directions = 'global_orthonormal',
@@ -111,12 +137,170 @@ class LatticeDirection:
         else:
             raise ValueError("shape of input vector not appropriate")
 
-    def compute(self, compute_list='all'):
+    def compute(self, compute_list="all"):
+        """
+        Compute requested crystallographic quantities and their dependencies.
+
+        Parameters
+        ----------
+        compute_list : {'all', str, iterable of str}, optional
+            Computations to perform.
+
+            ``'all'`` requests every computation currently registered in
+            the public computation pipeline.
+
+            A single computation may be supplied as a string, for example
+
+                direction.compute("lattice_interplanar_spacing")
+
+            or several computations may be supplied as an iterable, for example
+
+                direction.compute([
+                    "lattice_spacing",
+                    "motif_plane_locations",
+                ])
+
+            Required dependencies are inserted automatically and executed in
+            the correct order.
+
+            For example, requesting
+
+                direction.compute("motif_plane_locations")
+
+            automatically computes
+
+                lattice_spacing
+                -> plane_commensurability
+                -> lattice_interplanar_spacing
+                -> motif_plane_locations
+
+        Notes
+        -----
+        ``primitive_vectors_in_2d_sublattice`` is not yet registered in the
+        public computation pipeline because that routine is still experimental.
+        """
+
+        requested = self._normalize_compute_list(
+            compute_list
+        )
+
+        self._compute_pipeline = (
+            self._resolve_compute_pipeline(
+                requested
+            )
+        )
+
         self._execute_pipeline()
 
+    @classmethod
+    def _normalize_compute_list(
+        cls,
+        compute_list,
+    ):
+        """
+        Normalize and validate user-requested computation names.
+        """
+
+        if (
+            isinstance(compute_list, str)
+            and compute_list == "all"
+        ):
+            return list(
+                cls._available_computations
+            )
+
+        if isinstance(compute_list, str):
+            requested = [compute_list]
+
+        else:
+            try:
+                requested = list(
+                    compute_list
+                )
+
+            except TypeError as exc:
+                raise TypeError(
+                    "compute_list must be 'all', "
+                    "a computation name, or an iterable "
+                    "of computation names."
+                ) from exc
+
+        if len(requested) == 0:
+            raise ValueError(
+                "compute_list must not be empty."
+            )
+
+        invalid = [
+            name
+            for name in requested
+            if name
+            not in cls._available_computations
+        ]
+
+        if invalid:
+            raise ValueError(
+                f"Unknown computation(s): {invalid}. "
+                "Available computations are "
+                f"{list(cls._available_computations)} "
+                "or 'all'."
+            )
+
+        # Remove duplicates while retaining
+        # the user-requested order.
+        return list(
+            dict.fromkeys(requested)
+        )
+
+    @classmethod
+    def _resolve_compute_pipeline(
+        cls,
+        requested,
+    ):
+        """
+        Construct a dependency-complete computation pipeline.
+
+        Each computation and each of its dependencies appears exactly once,
+        with dependencies occurring before the computations that require them.
+        """
+
+        pipeline = []
+        visited = set()
+
+        def add_with_dependencies(name):
+
+            if name in visited:
+                return
+
+            for dependency in (
+                cls._computation_dependencies[
+                    name
+                ]
+            ):
+                add_with_dependencies(
+                    dependency
+                )
+
+            visited.add(name)
+            pipeline.append(name)
+
+        for name in requested:
+            add_with_dependencies(name)
+
+        return pipeline
+
     def _execute_pipeline(self):
+        """
+        Execute the resolved computation pipeline in order.
+        """
+
         for element in self._compute_pipeline:
-            self.__dict__["_compute_"+element]()
+
+            compute_method = getattr(
+                self,
+                "_compute_" + element,
+            )
+
+            compute_method()
 
     @classmethod
     def _integer_proportionality(cls, vectors, integer_vectors):
@@ -525,7 +709,11 @@ class LatticeDirection:
 
     def _compute_lattice_interplanar_spacing(self):
 
-        self._compute_plane_commensurability()
+        if not hasattr(
+            self,
+            "_is_plane_commensurate",
+        ):
+            self._compute_plane_commensurability()
 
         if not np.all(
             self._is_plane_commensurate
@@ -597,6 +785,33 @@ class LatticeDirection:
                                    f"Projections: {proj}; lattice interplanar spacing: {dist}")
             proj = np.round(proj, decimals=8)
             self._motif_plane_locations.append(np.unique(proj)/dist) 
+
+    @property
+    def motif_plane_locations(self):
+        """
+        Normalized motif-plane locations within one lattice interplanar spacing.
+
+        For each requested lattice direction, the returned values identify
+        the distinct motif planes within one interplanar-spacing interval.
+
+        Returns
+        -------
+        list of ndarray
+            One array for each requested direction. Values are normalized
+            by the corresponding lattice interplanar spacing.
+        """
+
+        if hasattr(
+            self,
+            "_motif_plane_locations",
+        ):
+            return self._motif_plane_locations
+
+        raise RuntimeError(
+            "motif plane locations have not been computed yet.\n"
+            "Please run compute() with motif_plane_locations "
+            "in compute_list."
+        )
     
     def _compute_relative_shift_of_lattice_planes(self):
 

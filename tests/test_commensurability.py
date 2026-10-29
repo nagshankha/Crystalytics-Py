@@ -45,7 +45,7 @@ def test_non_cubic_direction_maps_to_different_normal_plane_indices():
         basis_directions="primitive_vector",
     )
 
-    d._compute_lattice_spacing()
+    d.compute("lattice_spacing")
 
     assert d.is_lattice_direction[0]
     assert d.is_plane_commensurate[0]
@@ -55,7 +55,7 @@ def test_non_cubic_direction_maps_to_different_normal_plane_indices():
         [1, 2, 0],
     )
 
-    d._compute_lattice_interplanar_spacing()
+    d.compute("lattice_interplanar_spacing")
 
     assert d.multiplicity[0] == 3
 
@@ -87,7 +87,7 @@ def test_lattice_direction_can_lack_rational_normal_plane():
         basis_directions="primitive_vector",
     )
 
-    d._compute_lattice_spacing()
+    d.compute("lattice_spacing")
 
     assert d.is_lattice_direction[0]
 
@@ -97,7 +97,7 @@ def test_lattice_direction_can_lack_rational_normal_plane():
         RuntimeError,
         match="not normal to a rational",
     ):
-        d._compute_lattice_interplanar_spacing()
+        d.compute("lattice_interplanar_spacing")
 
     with pytest.raises(
         RuntimeError,
@@ -118,7 +118,7 @@ def test_arbitrary_cartesian_direction_can_be_flagged_as_not_lattice_direction(
         basis_directions="global_orthonormal",
     )
 
-    d._compute_lattice_spacing()
+    d.compute("lattice_spacing")
 
     assert not d.is_lattice_direction[0]
 

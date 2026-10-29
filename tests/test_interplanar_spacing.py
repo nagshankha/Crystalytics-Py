@@ -126,7 +126,7 @@ def test_fcc_111_relative_plane_shifts(
         [1, 1, 1],
     )
 
-    d._compute_relative_shift_of_lattice_planes()
+    d.compute("relative_shift_of_lattice_planes")
 
     shifts = d.shortest_relative_shift_vectors[0]
 

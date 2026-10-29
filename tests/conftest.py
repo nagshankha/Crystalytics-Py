@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 
 from crystalytics_py.crystal_structure import CrystalStructure
-from crystalytics_py.direction import Direction
+from crystalytics_py.direction import LatticeDirection
+
 
 
 @pytest.fixture
@@ -64,25 +65,28 @@ def hcp_lattice():
 @pytest.fixture
 def direction_factory():
     """
-    Factory for constructing a Direction and computing lattice spacing.
-
-    Stage 0 deliberately calls the current private computation routine because
-    Direction.compute() does not yet populate/use its computation pipeline.
-
-    No production API is changed merely to make the tests convenient.
+    Construct a LatticeDirection and compute lattice spacing through
+    the public computation pipeline.
     """
 
-    def _make(crystal_structure, direction):
+    def _make(
+        crystal_structure,
+        direction,
+    ):
+        direction = np.asarray(
+            direction,
+            dtype=int,
+        ).reshape(1, -1)
 
-        direction = np.asarray(direction, dtype=int).reshape(1, -1)
-
-        obj = Direction(
+        obj = LatticeDirection(
             crystal_structure,
             direction,
             basis_directions="global_orthonormal",
         )
 
-        obj._compute_lattice_spacing()
+        obj.compute(
+            "lattice_spacing"
+        )
 
         return obj
 
@@ -90,14 +94,30 @@ def direction_factory():
 
 
 @pytest.fixture
-def direction_with_planes_factory(direction_factory):
-    """Factory that additionally computes interplanar spacing/multiplicity."""
+def direction_with_planes_factory():
+    """
+    Construct a LatticeDirection and compute interplanar spacing and
+    multiplicity through the public computation pipeline.
+    """
 
-    def _make(crystal_structure, direction):
+    def _make(
+        crystal_structure,
+        direction,
+    ):
+        direction = np.asarray(
+            direction,
+            dtype=int,
+        ).reshape(1, -1)
 
-        obj = direction_factory(crystal_structure, direction)
+        obj = LatticeDirection(
+            crystal_structure,
+            direction,
+            basis_directions="global_orthonormal",
+        )
 
-        obj._compute_lattice_interplanar_spacing()
+        obj.compute(
+            "lattice_interplanar_spacing"
+        )
 
         return obj
 
