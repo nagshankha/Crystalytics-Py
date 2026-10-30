@@ -72,8 +72,10 @@ class CrystalStructure():
                 inputs of most of the methods of this class. 
    """
 
-   def __init__(self, primitive_vecs, motif_positions=None, motif_types=None,
-                parent_crystal_structure=None):
+   def __init__(self, primitive_vecs, motif_positions=None, 
+                motif_types=None,
+                parent_crystal_structure=None,
+                parent_motif_indices=None):
       """
       Constructor:
 
@@ -81,8 +83,20 @@ class CrystalStructure():
       lattice vectors and fracional coordinates of the motifs w.r.t. those
       primitive lattice vectors.
       """
+
+      if (
+            parent_crystal_structure is None
+         ) != (
+            parent_motif_indices is None
+         ):
+            raise ValueError(
+               "parent_crystal_structure and "
+               "parent_motif_indices must either both "
+               "be supplied or both be None."
+            )
+
       self._primitive_vecs = primitive_vecs
-      self._motifs = (motif_positions, motif_types)
+      self._motifs = (motif_positions, motif_types, parent_motif_indices)
       self._parent_crystal_structure = parent_crystal_structure
       
    @property
@@ -110,6 +124,148 @@ class CrystalStructure():
       transform[np.isclose(transform, 0.0)] = 0.0
 
       return transform
+
+      @property
+      def parent_motif_indices(self):
+         """
+         Motif provenance with respect to the immediate parent crystal.
+
+         Returns
+         -------
+         ndarray of int or None
+            One index for each motif in ``self.motifs``. Each value identifies
+            the corresponding motif in ``self.parent_crystal_structure``.
+
+            ``None`` means that no immediate-parent motif provenance is known.
+            This is expected for a root crystal and may also occur for a crystal
+            constructed directly with a parent but without an explicit
+            ``parent_motif_indices`` mapping.
+         """
+
+         return self._parent_motif_indices
+
+
+      @property
+      def root_crystal_structure(self):
+         """
+         Earliest crystal in the explicitly defined parent hierarchy.
+
+         Parent references always represent immediate ancestry. This property
+         follows those references until a crystal with no parent is reached.
+
+         Returns
+         -------
+         CrystalStructure
+            Root ancestor of the current crystal.
+
+         Raises
+         ------
+         RuntimeError
+            If the hierarchy is found to contain a cycle.
+         """
+
+         current = self
+         visited = set()
+
+         while True:
+
+            identity = id(current)
+
+            if identity in visited:
+               raise RuntimeError(
+                  "Circular parent hierarchy detected while locating "
+                  "root_crystal_structure."
+               )
+
+            visited.add(identity)
+
+            parent = current.__dict__.get(
+               "_parent_crystal_structure"
+            )
+
+            if parent is None:
+               return current
+
+            current = parent
+
+
+      @property
+      def root_motif_indices(self):
+         """
+         Motif provenance with respect to the root crystal structure.
+
+         Returns
+         -------
+         ndarray of int
+            One index for each motif in ``self.motifs``. Each value identifies
+            the corresponding motif in ``self.root_crystal_structure``.
+
+            For a crystal without a parent, this is simply
+
+               np.arange(len(self.motifs)).
+
+         Raises
+         ------
+         RuntimeError
+            If any parent-child step in the ancestry lacks motif provenance,
+            or if the parent hierarchy contains a cycle.
+         """
+
+         # First construct and validate the complete ancestry chain.
+         #
+         # For C -> B -> A, this becomes [C, B].
+         chain = []
+
+         current = self
+         visited = set()
+
+         while True:
+
+            identity = id(current)
+
+            if identity in visited:
+               raise RuntimeError(
+                  "Circular parent hierarchy detected while resolving "
+                  "root_motif_indices."
+               )
+
+            visited.add(identity)
+
+            parent = current.__dict__.get(
+               "_parent_crystal_structure"
+            )
+
+            if parent is None:
+               break
+
+            chain.append(current)
+            current = parent
+
+         root_indices = np.arange(
+            len(self._motifs),
+            dtype=int,
+         )
+
+         # Compose immediate-parent mappings in ancestry order.
+         for child in chain:
+
+            mapping = child.__dict__.get(
+               "_parent_motif_indices"
+            )
+
+            if mapping is None:
+               raise RuntimeError(
+                  "root_motif_indices is unavailable because motif "
+                  "provenance to an immediate parent is unknown. "
+                  "Supply parent_motif_indices when directly constructing "
+                  "a CrystalStructure with parent_crystal_structure."
+               )
+
+            root_indices = mapping[
+               root_indices
+            ]
+
+         return root_indices
 
    @property
    def is_superlattice(self):
@@ -226,205 +382,287 @@ class CrystalStructure():
       return intervals
 
    def replicate(
-    self,
-    repetitions,
-    partial_plane_steps=None,
-):
-    """
-    Generate full and/or partial replications of the current crystal cell.
+         self,
+         repetitions,
+         partial_plane_steps=None,
+         return_motif_indices=False,
+      ):
+      """
+      Generate full and/or partial replications of the current crystal cell.
 
-    Parameters
-    ----------
-    repetitions : array-like of int
-        Number of complete cell repetitions along each current cell
-        vector.
+      Parameters
+      ----------
+      repetitions : array-like of int
+         Number of complete cell repetitions along each current cell
+         vector.
 
-    partial_plane_steps : array-like of int, optional
-        Additional partial replication along each cell vector,
-        expressed in parent-lattice plane-spacing increments.
+      partial_plane_steps : array-like of int, optional
+         Additional partial replication along each cell vector,
+         expressed in parent-lattice plane-spacing increments.
 
-        Before specifying these values, inspect
+         Before specifying these values, inspect
 
             crystal.replication_plane_intervals
 
-        If it returns K = [K_1, ..., K_D], each requested step must
-        satisfy
+         If it returns K = [K_1, ..., K_D], each requested step must
+         satisfy
 
             0 <= p_i < K_i.
 
-        The resulting scale factor along cell vector i is
+         The resulting scale factor along cell vector i is
 
             repetitions[i] + p_i / K_i.
 
-        If omitted, all partial steps are zero.
+         If omitted, all partial steps are zero.
 
-    Returns
-    -------
-    positions : ndarray
-        Cartesian atom positions.
+      return_motif_indices : bool, optional
+         If False, preserve the historical three-value return:
 
-    atom_types : ndarray
-        Atom types corresponding to ``positions``.
+            positions, atom_types, cell_vectors
 
-    cell_vectors : ndarray
-        Bounding vectors of the generated cell.
+         If True, additionally return
 
-    Raises
-    ------
-    ValueError
-        If repetition counts or partial steps are invalid.
-        Check ``crystal.replication_plane_intervals`` for the valid
-        bounds of ``partial_plane_steps``.
+            motif_indices
 
-    NotImplementedError
-        Replication currently supports only a single-site parent motif.
-        Multi-atom parent motifs will be supported later.
-    """
+         where ``motif_indices[j]`` identifies the motif in
+         ``self.motifs`` from which ``positions[j]`` was generated.
 
-    ndim = len(self._primitive_vecs)
+         These indices deliberately refer to the current CrystalStructure,
+         not to its parent or root crystal.
 
-    repetitions = np.asarray(
-        repetitions,
-        dtype=int,
-    )
+      Returns
+      -------
+      positions : ndarray
+         Cartesian atom positions.
 
-    if repetitions.shape != (ndim,):
-        raise ValueError(
+      atom_types : ndarray
+         Atom types corresponding to ``positions``.
+
+      cell_vectors : ndarray
+         Bounding vectors of the generated cell.
+
+      motif_indices : ndarray, optional
+         Returned only when ``return_motif_indices=True``.
+
+         One integer per generated position, identifying the corresponding
+         motif in ``self.motifs``.
+
+      Raises
+      ------
+      ValueError
+         If repetition counts or partial steps are invalid.
+
+      TypeError
+         If ``return_motif_indices`` is not boolean.
+
+      NotImplementedError
+         Replication currently supports only a single-site parent motif.
+
+      Notes
+      -----
+      Multi-motif-parent replication remains intentionally deferred.
+
+      TODO
+      ----
+      When that restriction is removed, motif-index provenance must retain
+      the same strict positional alignment through all replication,
+      filtering, and truncation operations.
+      """
+
+      ndim = len(
+         self._primitive_vecs
+      )
+
+      repetitions = np.asarray(
+         repetitions,
+         dtype=int,
+      )
+
+      if repetitions.shape != (ndim,):
+         raise ValueError(
             f"repetitions must contain exactly {ndim} values. "
             f"Received shape {repetitions.shape}."
-        )
+         )
 
-    # Stage 3: replication is restricted to structures ultimately
-    # derived from a single-site parent lattice.
-    parent = (
-        self._parent_crystal_structure
-        if self._parent_crystal_structure is not None
-        else self
-    )
+      if not isinstance(
+         return_motif_indices,
+         (bool, np.bool_),
+      ):
+         raise TypeError(
+            "return_motif_indices must be a boolean."
+         )
 
-    if len(parent.motifs) != 1:
-        raise NotImplementedError(
+      # Current Stage-3 restriction:
+      # replication is allowed only when the immediate parent,
+      # or self for a root crystal, has a single motif.
+      parent = (
+         self._parent_crystal_structure
+         if self._parent_crystal_structure is not None
+         else self
+      )
+
+      if len(parent.motifs) != 1:
+         raise NotImplementedError(
             "Replication currently supports only a "
             "single-site parent motif."
-        )
+         )
 
-    K = self.replication_plane_intervals
+      K = self.replication_plane_intervals
 
-    if partial_plane_steps is None:
-        partial_plane_steps = np.zeros(
+      if partial_plane_steps is None:
+         partial_plane_steps = np.zeros(
             ndim,
             dtype=int,
-        )
-    else:
-        partial_plane_steps = np.asarray(
+         )
+
+      else:
+         partial_plane_steps = np.asarray(
             partial_plane_steps,
             dtype=int,
-        )
+         )
 
-    if partial_plane_steps.shape != (ndim,):
-        raise ValueError(
+      if partial_plane_steps.shape != (ndim,):
+         raise ValueError(
             f"partial_plane_steps must contain exactly {ndim} values. "
             f"Received shape {partial_plane_steps.shape}."
-        )
+         )
 
-    invalid = (
-        (partial_plane_steps < 0)
-        | (partial_plane_steps >= K)
-    )
+      invalid = (
+         (partial_plane_steps < 0)
+         | (partial_plane_steps >= K)
+      )
 
-    if np.any(invalid):
-        raise ValueError(
+      if np.any(invalid):
+         raise ValueError(
             "Invalid partial_plane_steps. Each p_i must satisfy "
             "0 <= p_i < K_i, where K_i is given by "
             "crystal.replication_plane_intervals.\n"
             f"replication_plane_intervals = {K}\n"
             f"received partial_plane_steps = "
             f"{partial_plane_steps}"
-        )
+         )
 
-    total_plane_intervals = (
-        repetitions * K
-        + partial_plane_steps
-    )
+      total_plane_intervals = (
+         repetitions * K
+         + partial_plane_steps
+      )
 
-    if np.any(total_plane_intervals <= 0):
-        raise ValueError(
+      if np.any(
+         total_plane_intervals <= 0
+      ):
+         raise ValueError(
             "The generated cell must have positive extent "
             "along every cell vector. Increase repetitions "
             "and/or partial_plane_steps."
-        )
+         )
 
-    scale_factors = (
-        repetitions
-        + partial_plane_steps / K
-    )
+      scale_factors = (
+         repetitions
+         + partial_plane_steps / K
+      )
 
-    cell_vectors = (
-        scale_factors[:, None]
-        * self._primitive_vecs
-    )
+      cell_vectors = (
+         scale_factors[:, None]
+         * self._primitive_vecs
+      )
 
-    tile_counts = np.ceil(
-        scale_factors
-    ).astype(int)
+      tile_counts = np.ceil(
+         scale_factors
+      ).astype(int)
 
-    ranges = [
-        np.arange(n)
-        for n in tile_counts
-    ]
+      ranges = [
+         np.arange(n)
+         for n in tile_counts
+      ]
 
-    mesh = np.meshgrid(
-        *ranges,
-        indexing="ij",
-    )
+      mesh = np.meshgrid(
+         *ranges,
+         indexing="ij",
+      )
 
-    translations = np.stack(
-        [m.ravel() for m in mesh],
-        axis=-1,
-    )
+      translations = np.stack(
+         [
+            m.ravel()
+            for m in mesh
+         ],
+         axis=-1,
+      )
 
-    fractional_positions = (
-        translations[:, None, :]
-        + self._motifs["pos"][None, :, :]
-    ).reshape(
-        -1,
-        ndim,
-    )
+      fractional_positions = (
+         translations[:, None, :]
+         + self._motifs["pos"][None, :, :]
+      ).reshape(
+         -1,
+         ndim,
+      )
 
-    atom_types = np.tile(
-        self._motifs["type"],
-        len(translations),
-    )
+      atom_types = np.tile(
+         self._motifs["type"],
+         len(translations),
+      )
 
-    upper_boundary = scale_factors[None, :]
+      # The reshape above is translation-major and motif-minor:
+      #
+      # translation 0: motif 0, motif 1, ...
+      # translation 1: motif 0, motif 1, ...
+      #
+      # Therefore the corresponding source motif indices are:
+      motif_indices = np.tile(
+         np.arange(
+            len(self._motifs),
+            dtype=int,
+         ),
+         len(translations),
+      )
 
-    inside = np.all(
-        (fractional_positions >= 0.0)
-        & (
+      upper_boundary = (
+         scale_factors[None, :]
+      )
+
+      inside = np.all(
+         (
+            fractional_positions
+            >= 0.0
+         )
+         & (
             fractional_positions
             < upper_boundary
-        ),
-        axis=1,
-    )
+         ),
+         axis=1,
+      )
 
-    fractional_positions = fractional_positions[
-        inside
-    ]
+      fractional_positions = (
+         fractional_positions[
+            inside
+         ]
+      )
 
-    atom_types = atom_types[
-        inside
-    ]
+      atom_types = atom_types[
+         inside
+      ]
 
-    positions = np.dot(
-        fractional_positions,
-        self._primitive_vecs,
-    )
+      motif_indices = motif_indices[
+         inside
+      ]
 
-    return (
-        positions,
-        atom_types,
-        cell_vectors,
-    )
+      positions = np.dot(
+         fractional_positions,
+         self._primitive_vecs,
+      )
+
+      if return_motif_indices:
+         return (
+            positions,
+            atom_types,
+            cell_vectors,
+            motif_indices,
+         )
+
+      return (
+         positions,
+         atom_types,
+         cell_vectors,
+      )
 
    def find_lattice_points_in_superlattice(self, 
                                            superlattice_generator_vector_directions,
@@ -486,10 +724,19 @@ class CrystalStructure():
       new_motifs[new_motifs>1] -= 1.
       new_motif_types = np.repeat(self._motifs["type"], len(W)).tolist()
 
+      parent_motif_indices = np.repeat(
+         np.arange(
+            len(self._motifs),
+            dtype=int,
+         ),
+         len(W),
+      )
+
       return CrystalStructure(superlattice_generator_vectors,
                               new_motifs,
                               new_motif_types,
-                              parent_crystal_structure=self)
+                              parent_crystal_structure=self,
+                              parent_motif_indices=parent_motif_indices)
 
    ############################################################
 
@@ -1387,7 +1634,7 @@ class CrystalStructure():
                self.__dict__[name] = value	 
 
       elif (name == '_motifs'):
-         positions, types = value
+         positions, types, parent_motif_indices = value
          if positions is None:
             positions = np.zeros(np.shape(self._primitive_vecs)[0])[None, :]
          elif not isinstance(positions, np.ndarray):
@@ -1428,19 +1675,108 @@ class CrystalStructure():
          # so that no two or more motifs sit on each other
          motifs = np.array(list(zip(positions, types)), dtype=dtype)
          motifs["pos"] = np.round(motifs["pos"], decimals=8)
-         motifs = np.unique(motifs) # We expect the difference in fractional 
-                                    # coordinates is > 1e-8
+         motifs, unique_indices, inverse = np.unique(
+                            motifs,
+                            return_index=True,
+                            return_inverse=True,) # We expect the difference in fractional 
+                                                  # coordinates is > 1e-8
+
+         unique_parent_motif_indices = (
+            parent_motif_indices[
+               unique_indices
+            ]
+         )
+
+         reconstructed_parent_indices = (
+            unique_parent_motif_indices[
+               inverse
+            ]
+         )
+
+         if np.array_equal(
+               reconstructed_parent_indices,
+               parent_motif_indices,
+            ):
+            self.__dict__[name] = motifs
+            self.__dict__["_parent_motif_indices"] = unique_parent_motif_indices
+         else:
+            raise ValueError(
+                  "Motif provenance is ambiguous after motif "
+                  "normalization or duplicate elimination..."
+               )
          
-         self.__dict__[name] = motifs
+         
 
       elif name == "_parent_crystal_structure":
-         if value is not None and not isinstance(value, CrystalStructure):
+
+         if (
+            value is not None
+            and not isinstance(
+               value,
+               CrystalStructure,
+            )
+         ):
             raise TypeError(
-                  'class CrystalStructure: "parent_crystal_structure" '
-                  "must be a CrystalStructure instance or None"
+               'class CrystalStructure: "parent_crystal_structure" '
+               "must be a CrystalStructure instance or None"
             )
 
-         self.__dict__[name] = value
+         # Validate the proposed ancestry before assigning it.
+         #
+         # Object identity is deliberately used; crystallographically
+         # identical CrystalStructure objects are still distinct nodes
+         # in the ancestry graph.
+         ancestor = value
+         visited = set()
+
+         while ancestor is not None:
+
+            if ancestor is self:
+               raise ValueError(
+                  "Circular parent hierarchy is not allowed: assigning "
+                  "this parent would make the CrystalStructure its own "
+                  "ancestor."
+               )
+
+            identity = id(
+               ancestor
+            )
+
+            if identity in visited:
+               raise ValueError(
+                  "Circular parent hierarchy is not allowed: the "
+                  "proposed parent hierarchy already contains a cycle."
+               )
+
+            visited.add(
+               identity
+            )
+
+            ancestor = (
+               ancestor.__dict__.get(
+                  "_parent_crystal_structure"
+               )
+            )
+
+
+         old_parent = self.__dict__.get(
+            "_parent_crystal_structure"
+         )
+
+         self.__dict__[
+            name
+         ] = value
+
+         # Provenance is defined relative to the immediate parent.
+         # Re-parenting therefore invalidates any existing mapping.
+         if (
+            "_parent_motif_indices"
+            in self.__dict__
+            and value is not old_parent
+         ):
+            self.__dict__[
+               "_parent_motif_indices"
+            ] = None
                   
       else:
          raise NameError('class CrystalStructure: "' + name + '" is not a member of the this class. It must be ' +
