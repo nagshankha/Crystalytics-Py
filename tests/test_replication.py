@@ -479,8 +479,15 @@ def test_replication_plane_intervals_are_metric_independent():
                 [0.5, 0.5, 0.0],
             ]
         ),
-        motif_types=[1, 1],
+        motif_types=[
+            1,
+            1,
+        ],
         parent_crystal_structure=parent,
+        parent_motif_indices=[
+            0,
+            0,
+        ],
     )
 
     np.testing.assert_array_equal(

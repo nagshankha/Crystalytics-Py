@@ -96,8 +96,8 @@ class CrystalStructure():
             )
 
       self._primitive_vecs = primitive_vecs
-      self._motifs = (motif_positions, motif_types, parent_motif_indices)
       self._parent_crystal_structure = parent_crystal_structure
+      self._motifs = (motif_positions, motif_types, parent_motif_indices)
       
    @property
    def primitive_vectors(self):
@@ -125,147 +125,147 @@ class CrystalStructure():
 
       return transform
 
-      @property
-      def parent_motif_indices(self):
-         """
-         Motif provenance with respect to the immediate parent crystal.
+   @property
+   def parent_motif_indices(self):
+      """
+      Motif provenance with respect to the immediate parent crystal.
 
-         Returns
-         -------
-         ndarray of int or None
-            One index for each motif in ``self.motifs``. Each value identifies
-            the corresponding motif in ``self.parent_crystal_structure``.
+      Returns
+      -------
+      ndarray of int or None
+         One index for each motif in ``self.motifs``. Each value identifies
+         the corresponding motif in ``self.parent_crystal_structure``.
 
-            ``None`` means that no immediate-parent motif provenance is known.
-            This is expected for a root crystal and may also occur for a crystal
-            constructed directly with a parent but without an explicit
-            ``parent_motif_indices`` mapping.
-         """
+         ``None`` means that no immediate-parent motif provenance is known.
+         This is expected for a root crystal and may also occur for a crystal
+         constructed directly with a parent but without an explicit
+         ``parent_motif_indices`` mapping.
+      """
 
-         return self._parent_motif_indices
+      return self._parent_motif_indices
 
 
-      @property
-      def root_crystal_structure(self):
-         """
-         Earliest crystal in the explicitly defined parent hierarchy.
+   @property
+   def root_crystal_structure(self):
+      """
+      Earliest crystal in the explicitly defined parent hierarchy.
 
-         Parent references always represent immediate ancestry. This property
-         follows those references until a crystal with no parent is reached.
+      Parent references always represent immediate ancestry. This property
+      follows those references until a crystal with no parent is reached.
 
-         Returns
-         -------
-         CrystalStructure
-            Root ancestor of the current crystal.
+      Returns
+      -------
+      CrystalStructure
+         Root ancestor of the current crystal.
 
-         Raises
-         ------
-         RuntimeError
-            If the hierarchy is found to contain a cycle.
-         """
+      Raises
+      ------
+      RuntimeError
+         If the hierarchy is found to contain a cycle.
+      """
 
-         current = self
-         visited = set()
+      current = self
+      visited = set()
 
-         while True:
+      while True:
 
-            identity = id(current)
+         identity = id(current)
 
-            if identity in visited:
-               raise RuntimeError(
-                  "Circular parent hierarchy detected while locating "
-                  "root_crystal_structure."
-               )
-
-            visited.add(identity)
-
-            parent = current.__dict__.get(
-               "_parent_crystal_structure"
+         if identity in visited:
+            raise RuntimeError(
+               "Circular parent hierarchy detected while locating "
+               "root_crystal_structure."
             )
 
-            if parent is None:
-               return current
+         visited.add(identity)
 
-            current = parent
-
-
-      @property
-      def root_motif_indices(self):
-         """
-         Motif provenance with respect to the root crystal structure.
-
-         Returns
-         -------
-         ndarray of int
-            One index for each motif in ``self.motifs``. Each value identifies
-            the corresponding motif in ``self.root_crystal_structure``.
-
-            For a crystal without a parent, this is simply
-
-               np.arange(len(self.motifs)).
-
-         Raises
-         ------
-         RuntimeError
-            If any parent-child step in the ancestry lacks motif provenance,
-            or if the parent hierarchy contains a cycle.
-         """
-
-         # First construct and validate the complete ancestry chain.
-         #
-         # For C -> B -> A, this becomes [C, B].
-         chain = []
-
-         current = self
-         visited = set()
-
-         while True:
-
-            identity = id(current)
-
-            if identity in visited:
-               raise RuntimeError(
-                  "Circular parent hierarchy detected while resolving "
-                  "root_motif_indices."
-               )
-
-            visited.add(identity)
-
-            parent = current.__dict__.get(
-               "_parent_crystal_structure"
-            )
-
-            if parent is None:
-               break
-
-            chain.append(current)
-            current = parent
-
-         root_indices = np.arange(
-            len(self._motifs),
-            dtype=int,
+         parent = current.__dict__.get(
+            "_parent_crystal_structure"
          )
 
-         # Compose immediate-parent mappings in ancestry order.
-         for child in chain:
+         if parent is None:
+            return current
 
-            mapping = child.__dict__.get(
-               "_parent_motif_indices"
+         current = parent
+
+
+   @property
+   def root_motif_indices(self):
+      """
+      Motif provenance with respect to the root crystal structure.
+
+      Returns
+      -------
+      ndarray of int
+         One index for each motif in ``self.motifs``. Each value identifies
+         the corresponding motif in ``self.root_crystal_structure``.
+
+         For a crystal without a parent, this is simply
+
+            np.arange(len(self.motifs)).
+
+      Raises
+      ------
+      RuntimeError
+         If any parent-child step in the ancestry lacks motif provenance,
+         or if the parent hierarchy contains a cycle.
+      """
+
+      # First construct and validate the complete ancestry chain.
+      #
+      # For C -> B -> A, this becomes [C, B].
+      chain = []
+
+      current = self
+      visited = set()
+
+      while True:
+
+         identity = id(current)
+
+         if identity in visited:
+            raise RuntimeError(
+               "Circular parent hierarchy detected while resolving "
+               "root_motif_indices."
             )
 
-            if mapping is None:
-               raise RuntimeError(
-                  "root_motif_indices is unavailable because motif "
-                  "provenance to an immediate parent is unknown. "
-                  "Supply parent_motif_indices when directly constructing "
-                  "a CrystalStructure with parent_crystal_structure."
-               )
+         visited.add(identity)
 
-            root_indices = mapping[
-               root_indices
-            ]
+         parent = current.__dict__.get(
+            "_parent_crystal_structure"
+         )
 
-         return root_indices
+         if parent is None:
+            break
+
+         chain.append(current)
+         current = parent
+
+      root_indices = np.arange(
+         len(self._motifs),
+         dtype=int,
+      )
+
+      # Compose immediate-parent mappings in ancestry order.
+      for child in chain:
+
+         mapping = child.__dict__.get(
+            "_parent_motif_indices"
+         )
+
+         if mapping is None:
+            raise RuntimeError(
+               "root_motif_indices is unavailable because motif "
+               "provenance to an immediate parent is unknown. "
+               "Supply parent_motif_indices when directly constructing "
+               "a CrystalStructure with parent_crystal_structure."
+            )
+
+         root_indices = mapping[
+            root_indices
+         ]
+
+      return root_indices
 
    @property
    def is_superlattice(self):
@@ -1675,35 +1675,129 @@ class CrystalStructure():
          # so that no two or more motifs sit on each other
          motifs = np.array(list(zip(positions, types)), dtype=dtype)
          motifs["pos"] = np.round(motifs["pos"], decimals=8)
+
+         parent = self.__dict__.get(
+            "_parent_crystal_structure"
+         )
+
+         if (
+            parent is None
+         ) != (
+            parent_motif_indices is None
+         ):
+            raise ValueError(
+               "parent_crystal_structure and "
+               "parent_motif_indices must either both "
+               "be supplied or both be None."
+            )
+
+         if parent_motif_indices is not None:
+
+            if not isinstance(
+               parent_motif_indices,
+               (
+                  list,
+                  tuple,
+                  np.ndarray,
+               ),
+            ):
+               raise TypeError(
+                  "parent_motif_indices must be a list, "
+                  "tuple, numpy ndarray, or None."
+               )
+
+            parent_motif_indices = np.asarray(
+               parent_motif_indices
+            )
+
+            if parent_motif_indices.ndim != 1:
+               raise ValueError(
+                  "parent_motif_indices must be "
+                  "one-dimensional."
+               )
+
+            if not np.issubdtype(
+               parent_motif_indices.dtype,
+               np.integer,
+            ):
+               raise TypeError(
+                  "parent_motif_indices must contain "
+                  "integers."
+               )
+
+            if len(
+               parent_motif_indices
+            ) != len(
+               positions
+            ):
+               raise ValueError(
+                  "parent_motif_indices must contain "
+                  "exactly one entry for each supplied motif."
+               )
+
+            if (
+               np.any(
+                  parent_motif_indices < 0
+               )
+               or np.any(
+                  parent_motif_indices
+                  >= len(parent.motifs)
+               )
+            ):
+               raise ValueError(
+                  "parent_motif_indices contains an "
+                  "index outside the motif range of "
+                  "parent_crystal_structure."
+               )
+
+            parent_motif_indices = (
+               parent_motif_indices.astype(
+                  int,
+                  copy=False,
+               )
+            )
+
+
          motifs, unique_indices, inverse = np.unique(
                             motifs,
                             return_index=True,
                             return_inverse=True,) # We expect the difference in fractional 
                                                   # coordinates is > 1e-8
 
-         unique_parent_motif_indices = (
-            parent_motif_indices[
-               unique_indices
-            ]
-         )
+         if parent_motif_indices is None:
 
-         reconstructed_parent_indices = (
-            unique_parent_motif_indices[
-               inverse
-            ]
-         )
+            unique_parent_motif_indices = None
 
-         if np.array_equal(
+         else:
+
+            unique_parent_motif_indices = (
+               parent_motif_indices[
+                  unique_indices
+               ]
+            )
+
+            reconstructed_parent_indices = (
+               unique_parent_motif_indices[
+                  inverse
+               ]
+            )
+
+            if not np.array_equal(
                reconstructed_parent_indices,
                parent_motif_indices,
             ):
-            self.__dict__[name] = motifs
-            self.__dict__["_parent_motif_indices"] = unique_parent_motif_indices
-         else:
-            raise ValueError(
+               raise ValueError(
                   "Motif provenance is ambiguous after motif "
-                  "normalization or duplicate elimination..."
+                  "normalization or duplicate elimination: "
+                  "motifs that collapse to the same stored "
+                  "motif reference different parent motifs."
                )
+
+         self.__dict__[name] = motifs
+
+         self.__dict__[
+            "_parent_motif_indices"
+         ] = unique_parent_motif_indices
          
          
 
@@ -1763,20 +1857,45 @@ class CrystalStructure():
             "_parent_crystal_structure"
          )
 
-         self.__dict__[
-            name
-         ] = value
-
-         # Provenance is defined relative to the immediate parent.
-         # Re-parenting therefore invalidates any existing mapping.
-         if (
-            "_parent_motif_indices"
+         already_initialized = (
+            "_parent_crystal_structure"
             in self.__dict__
+         )
+
+         old_parent = self.__dict__.get(
+            "_parent_crystal_structure"
+         )
+
+         if (
+            already_initialized
             and value is not old_parent
          ):
-            self.__dict__[
-               "_parent_motif_indices"
-            ] = None
+
+            # Removing ancestry is unambiguous:
+            # the object becomes a root crystal.
+            if value is None:
+
+               self.__dict__[
+                  name
+               ] = None
+
+               self.__dict__[
+                  "_parent_motif_indices"
+               ] = None
+
+               return
+
+            # A different non-None parent would require
+            # an entirely new motif provenance mapping.
+            raise ValueError(
+               "Cannot reassign parent_crystal_structure "
+               "to a different non-None parent without "
+               "simultaneously defining new "
+               "parent_motif_indices. Construct a new "
+               "CrystalStructure instead."
+            )
+
+         self.__dict__[name] = value
                   
       else:
          raise NameError('class CrystalStructure: "' + name + '" is not a member of the this class. It must be ' +

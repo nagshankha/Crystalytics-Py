@@ -319,54 +319,56 @@ def test_nested_superlattices_preserve_immediate_and_root_provenance():
     )
 
 
-def test_direct_child_without_provenance_reports_unknown_root_mapping():
+def test_parent_requires_parent_motif_indices():
     """
-    Direct construction with an explicit parent but no motif mapping should
-    retain the parent reference without inventing motif provenance.
+    A CrystalStructure with an explicit parent should require an
+    immediate-parent motif provenance mapping.
     """
 
     parent = _two_motif_sc()
 
-    child = CrystalStructure(
-        np.eye(
-            3,
-            dtype=float,
-        ),
-        motif_positions=np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [0.5, 0.0, 0.0],
+    with pytest.raises(
+        ValueError,
+        match="parent_motif_indices",
+    ):
+        CrystalStructure(
+            np.eye(
+                3,
+                dtype=float,
+            ),
+            motif_positions=np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.5, 0.0, 0.0],
+                ],
+                dtype=float,
+            ),
+            motif_types=[
+                7,
+                7,
             ],
-            dtype=float,
-        ),
-        motif_types=[
-            7,
-            7,
-        ],
-        parent_crystal_structure=parent,
-    )
+            parent_crystal_structure=parent,
+        )
 
-    assert (
-        child.parent_crystal_structure
-        is parent
-    )
-
-    assert (
-        child.root_crystal_structure
-        is parent
-    )
-
-    assert (
-        child.parent_motif_indices
-        is None
-    )
+def test_parent_motif_indices_require_parent():
+    """
+    Parent motif provenance should not be accepted when no parent
+    CrystalStructure exists to give those indices meaning.
+    """
 
     with pytest.raises(
-        RuntimeError,
-        match="provenance",
+        ValueError,
+        match="parent_crystal_structure",
     ):
-        _ = child.root_motif_indices
-
+        CrystalStructure(
+            np.eye(
+                3,
+                dtype=float,
+            ),
+            parent_motif_indices=[
+                0,
+            ],
+        )
 
 def test_direct_child_with_explicit_provenance_composes_root_mapping():
     """
@@ -500,6 +502,9 @@ def test_indirect_parent_cycle_is_rejected():
             dtype=float,
         ),
         parent_crystal_structure=crystal_a,
+        parent_motif_indices=[
+            0,
+        ],
     )
 
     crystal_c = CrystalStructure(
@@ -508,6 +513,9 @@ def test_indirect_parent_cycle_is_rejected():
             dtype=float,
         ),
         parent_crystal_structure=crystal_b,
+        parent_motif_indices=[
+            0,
+        ],
     )
 
     with pytest.raises(
